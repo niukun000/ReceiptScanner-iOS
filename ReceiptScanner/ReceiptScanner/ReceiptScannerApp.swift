@@ -1,11 +1,5 @@
-//
-//  ReceiptScannerApp.swift
-//  ReceiptScanner
-//
-//  Created by Kun Niu on 2026-05-28.
-//
-
 import SwiftUI
+import SwiftData
 
 @main
 struct ReceiptScannerApp: App {
@@ -13,5 +7,6 @@ struct ReceiptScannerApp: App {
         WindowGroup {
             ContentView()
         }
+        .modelContainer(for: [Receipt.self, ScannedItem.self])
     }
 }
