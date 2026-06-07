@@ -2,7 +2,7 @@
 //  ReceiptScannerUITestsLaunchTests.swift
 //  ReceiptScannerUITests
 //
-//  Created by Kun Niu on 2026-05-28.
+//  Created by Kun Niu on 2026-06-06.
 //
 
 import XCTest

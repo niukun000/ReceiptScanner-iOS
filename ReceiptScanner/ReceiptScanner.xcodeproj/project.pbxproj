@@ -7,40 +7,41 @@
 	objects = {
 
 /* Begin PBXContainerItemProxy section */
-		922DF7832FC8ADC500F7365E /* PBXContainerItemProxy */ = {
+		9225C29D2FD3F70B009DF74D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 922DF76D2FC8ADC400F7365E /* Project object */;
+			containerPortal = 9225C2872FD3F70A009DF74D /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 922DF7742FC8ADC400F7365E;
+			remoteGlobalIDString = 9225C28E2FD3F70A009DF74D;
 			remoteInfo = ReceiptScanner;
 		};
-		922DF78D2FC8ADC500F7365E /* PBXContainerItemProxy */ = {
+		9225C2A72FD3F70B009DF74D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
-			containerPortal = 922DF76D2FC8ADC400F7365E /* Project object */;
+			containerPortal = 9225C2872FD3F70A009DF74D /* Project object */;
 			proxyType = 1;
-			remoteGlobalIDString = 922DF7742FC8ADC400F7365E;
+			remoteGlobalIDString = 9225C28E2FD3F70A009DF74D;
 			remoteInfo = ReceiptScanner;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
-		922DF7752FC8ADC400F7365E /* ReceiptScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ReceiptScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		922DF7822FC8ADC500F7365E /* ReceiptScannerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReceiptScannerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		922DF78C2FC8ADC500F7365E /* ReceiptScannerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReceiptScannerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		921A76B22FD49BFE00B3C114 /* ReceiptScanner.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; name = ReceiptScanner.xctestplan; path = ../ReceiptScanner.xctestplan; sourceTree = "<group>"; };
+		9225C28F2FD3F70A009DF74D /* ReceiptScanner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ReceiptScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		9225C29C2FD3F70B009DF74D /* ReceiptScannerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReceiptScannerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		9225C2A62FD3F70B009DF74D /* ReceiptScannerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ReceiptScannerUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		922DF7772FC8ADC400F7365E /* ReceiptScanner */ = {
+		9225C2912FD3F70A009DF74D /* ReceiptScanner */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ReceiptScanner;
 			sourceTree = "<group>";
 		};
-		922DF7852FC8ADC500F7365E /* ReceiptScannerTests */ = {
+		9225C29F2FD3F70B009DF74D /* ReceiptScannerTests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ReceiptScannerTests;
 			sourceTree = "<group>";
 		};
-		922DF78F2FC8ADC500F7365E /* ReceiptScannerUITests */ = {
+		9225C2A92FD3F70B009DF74D /* ReceiptScannerUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = ReceiptScannerUITests;
 			sourceTree = "<group>";
@@ -48,21 +49,21 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		922DF7722FC8ADC400F7365E /* Frameworks */ = {
+		9225C28C2FD3F70A009DF74D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF77F2FC8ADC500F7365E /* Frameworks */ = {
+		9225C2992FD3F70B009DF74D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF7892FC8ADC500F7365E /* Frameworks */ = {
+		9225C2A32FD3F70B009DF74D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -72,22 +73,23 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
-		922DF76C2FC8ADC400F7365E = {
+		9225C2862FD3F70A009DF74D = {
 			isa = PBXGroup;
 			children = (
-				922DF7772FC8ADC400F7365E /* ReceiptScanner */,
-				922DF7852FC8ADC500F7365E /* ReceiptScannerTests */,
-				922DF78F2FC8ADC500F7365E /* ReceiptScannerUITests */,
-				922DF7762FC8ADC400F7365E /* Products */,
+				921A76B22FD49BFE00B3C114 /* ReceiptScanner.xctestplan */,
+				9225C2912FD3F70A009DF74D /* ReceiptScanner */,
+				9225C29F2FD3F70B009DF74D /* ReceiptScannerTests */,
+				9225C2A92FD3F70B009DF74D /* ReceiptScannerUITests */,
+				9225C2902FD3F70A009DF74D /* Products */,
 			);
 			sourceTree = "<group>";
 		};
-		922DF7762FC8ADC400F7365E /* Products */ = {
+		9225C2902FD3F70A009DF74D /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				922DF7752FC8ADC400F7365E /* ReceiptScanner.app */,
-				922DF7822FC8ADC500F7365E /* ReceiptScannerTests.xctest */,
-				922DF78C2FC8ADC500F7365E /* ReceiptScannerUITests.xctest */,
+				9225C28F2FD3F70A009DF74D /* ReceiptScanner.app */,
+				9225C29C2FD3F70B009DF74D /* ReceiptScannerTests.xctest */,
+				9225C2A62FD3F70B009DF74D /* ReceiptScannerUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,134 +97,136 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		922DF7742FC8ADC400F7365E /* ReceiptScanner */ = {
+		9225C28E2FD3F70A009DF74D /* ReceiptScanner */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 922DF7962FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScanner" */;
+			buildConfigurationList = 9225C2B02FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScanner" */;
 			buildPhases = (
-				922DF7712FC8ADC400F7365E /* Sources */,
-				922DF7722FC8ADC400F7365E /* Frameworks */,
-				922DF7732FC8ADC400F7365E /* Resources */,
+				9225C28B2FD3F70A009DF74D /* Sources */,
+				9225C28C2FD3F70A009DF74D /* Frameworks */,
+				9225C28D2FD3F70A009DF74D /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				922DF7772FC8ADC400F7365E /* ReceiptScanner */,
+				9225C2912FD3F70A009DF74D /* ReceiptScanner */,
 			);
 			name = ReceiptScanner;
 			packageProductDependencies = (
 			);
 			productName = ReceiptScanner;
-			productReference = 922DF7752FC8ADC400F7365E /* ReceiptScanner.app */;
+			productReference = 9225C28F2FD3F70A009DF74D /* ReceiptScanner.app */;
 			productType = "com.apple.product-type.application";
 		};
-		922DF7812FC8ADC500F7365E /* ReceiptScannerTests */ = {
+		9225C29B2FD3F70B009DF74D /* ReceiptScannerTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 922DF7992FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScannerTests" */;
+			buildConfigurationList = 9225C2B32FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScannerTests" */;
 			buildPhases = (
-				922DF77E2FC8ADC500F7365E /* Sources */,
-				922DF77F2FC8ADC500F7365E /* Frameworks */,
-				922DF7802FC8ADC500F7365E /* Resources */,
+				9225C2982FD3F70B009DF74D /* Sources */,
+				9225C2992FD3F70B009DF74D /* Frameworks */,
+				9225C29A2FD3F70B009DF74D /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				922DF7842FC8ADC500F7365E /* PBXTargetDependency */,
+				9225C29E2FD3F70B009DF74D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				922DF7852FC8ADC500F7365E /* ReceiptScannerTests */,
+				9225C29F2FD3F70B009DF74D /* ReceiptScannerTests */,
 			);
 			name = ReceiptScannerTests;
 			packageProductDependencies = (
 			);
 			productName = ReceiptScannerTests;
-			productReference = 922DF7822FC8ADC500F7365E /* ReceiptScannerTests.xctest */;
+			productReference = 9225C29C2FD3F70B009DF74D /* ReceiptScannerTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		922DF78B2FC8ADC500F7365E /* ReceiptScannerUITests */ = {
+		9225C2A52FD3F70B009DF74D /* ReceiptScannerUITests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = 922DF79C2FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScannerUITests" */;
+			buildConfigurationList = 9225C2B62FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScannerUITests" */;
 			buildPhases = (
-				922DF7882FC8ADC500F7365E /* Sources */,
-				922DF7892FC8ADC500F7365E /* Frameworks */,
-				922DF78A2FC8ADC500F7365E /* Resources */,
+				9225C2A22FD3F70B009DF74D /* Sources */,
+				9225C2A32FD3F70B009DF74D /* Frameworks */,
+				9225C2A42FD3F70B009DF74D /* Resources */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				922DF78E2FC8ADC500F7365E /* PBXTargetDependency */,
+				9225C2A82FD3F70B009DF74D /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
-				922DF78F2FC8ADC500F7365E /* ReceiptScannerUITests */,
+				9225C2A92FD3F70B009DF74D /* ReceiptScannerUITests */,
 			);
 			name = ReceiptScannerUITests;
 			packageProductDependencies = (
 			);
 			productName = ReceiptScannerUITests;
-			productReference = 922DF78C2FC8ADC500F7365E /* ReceiptScannerUITests.xctest */;
+			productReference = 9225C2A62FD3F70B009DF74D /* ReceiptScannerUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
-		922DF76D2FC8ADC400F7365E /* Project object */ = {
+		9225C2872FD3F70A009DF74D /* Project object */ = {
 			isa = PBXProject;
 			attributes = {
 				BuildIndependentTargetsInParallel = 1;
-				LastSwiftUpdateCheck = 2650;
+				LastSwiftUpdateCheck = 1600;
 				LastUpgradeCheck = 2650;
 				TargetAttributes = {
-					922DF7742FC8ADC400F7365E = {
-						CreatedOnToolsVersion = 26.5;
+					9225C28E2FD3F70A009DF74D = {
+						CreatedOnToolsVersion = 16.0;
 					};
-					922DF7812FC8ADC500F7365E = {
-						CreatedOnToolsVersion = 26.5;
-						TestTargetID = 922DF7742FC8ADC400F7365E;
+					9225C29B2FD3F70B009DF74D = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 9225C28E2FD3F70A009DF74D;
 					};
-					922DF78B2FC8ADC500F7365E = {
-						CreatedOnToolsVersion = 26.5;
-						TestTargetID = 922DF7742FC8ADC400F7365E;
+					9225C2A52FD3F70B009DF74D = {
+						CreatedOnToolsVersion = 16.0;
+						TestTargetID = 9225C28E2FD3F70A009DF74D;
 					};
 				};
 			};
-			buildConfigurationList = 922DF7702FC8ADC400F7365E /* Build configuration list for PBXProject "ReceiptScanner" */;
+			buildConfigurationList = 9225C28A2FD3F70A009DF74D /* Build configuration list for PBXProject "ReceiptScanner" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
 				Base,
 			);
-			mainGroup = 922DF76C2FC8ADC400F7365E;
+			mainGroup = 9225C2862FD3F70A009DF74D;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+			);
 			preferredProjectObjectVersion = 77;
-			productRefGroup = 922DF7762FC8ADC400F7365E /* Products */;
+			productRefGroup = 9225C2902FD3F70A009DF74D /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				922DF7742FC8ADC400F7365E /* ReceiptScanner */,
-				922DF7812FC8ADC500F7365E /* ReceiptScannerTests */,
-				922DF78B2FC8ADC500F7365E /* ReceiptScannerUITests */,
+				9225C28E2FD3F70A009DF74D /* ReceiptScanner */,
+				9225C29B2FD3F70B009DF74D /* ReceiptScannerTests */,
+				9225C2A52FD3F70B009DF74D /* ReceiptScannerUITests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
-		922DF7732FC8ADC400F7365E /* Resources */ = {
+		9225C28D2FD3F70A009DF74D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF7802FC8ADC500F7365E /* Resources */ = {
+		9225C29A2FD3F70B009DF74D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF78A2FC8ADC500F7365E /* Resources */ = {
+		9225C2A42FD3F70B009DF74D /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -232,21 +236,21 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		922DF7712FC8ADC400F7365E /* Sources */ = {
+		9225C28B2FD3F70A009DF74D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF77E2FC8ADC500F7365E /* Sources */ = {
+		9225C2982FD3F70B009DF74D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		922DF7882FC8ADC500F7365E /* Sources */ = {
+		9225C2A22FD3F70B009DF74D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -256,20 +260,20 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		922DF7842FC8ADC500F7365E /* PBXTargetDependency */ = {
+		9225C29E2FD3F70B009DF74D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 922DF7742FC8ADC400F7365E /* ReceiptScanner */;
-			targetProxy = 922DF7832FC8ADC500F7365E /* PBXContainerItemProxy */;
+			target = 9225C28E2FD3F70A009DF74D /* ReceiptScanner */;
+			targetProxy = 9225C29D2FD3F70B009DF74D /* PBXContainerItemProxy */;
 		};
-		922DF78E2FC8ADC500F7365E /* PBXTargetDependency */ = {
+		9225C2A82FD3F70B009DF74D /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = 922DF7742FC8ADC400F7365E /* ReceiptScanner */;
-			targetProxy = 922DF78D2FC8ADC500F7365E /* PBXContainerItemProxy */;
+			target = 9225C28E2FD3F70A009DF74D /* ReceiptScanner */;
+			targetProxy = 9225C2A72FD3F70B009DF74D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		922DF7942FC8ADC500F7365E /* Debug */ = {
+		9225C2AE2FD3F70B009DF74D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -321,18 +325,21 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
 		};
-		922DF7952FC8ADC500F7365E /* Release */ = {
+		9225C2AF2FD3F70B009DF74D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
@@ -378,36 +385,47 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
 				SDKROOT = iphoneos;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_COMPILATION_MODE = wholemodule;
+				TARGETED_DEVICE_FAMILY = "1,2";
 				VALIDATE_PRODUCT = YES;
 			};
 			name = Release;
 		};
-		922DF7972FC8ADC500F7365E /* Debug */ = {
+		9225C2B12FD3F70B009DF74D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need access to your photos to scan receipt images.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				"INFOPLIST_KEY_NSCameraUsageDescription" = "We need camera access to scan physical receipts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScanner;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerFinal;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -419,26 +437,33 @@
 			};
 			name = Debug;
 		};
-		922DF7982FC8ADC500F7365E /* Release */ = {
+		9225C2B22FD3F70B009DF74D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "We need access to your photos to scan receipt images.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				"INFOPLIST_KEY_NSCameraUsageDescription" = "We need camera access to scan physical receipts.";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = UIInterfaceOrientationPortrait;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScanner;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerFinal;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
@@ -450,18 +475,25 @@
 			};
 			name = Release;
 		};
-		922DF79A2FC8ADC500F7365E /* Debug */ = {
+		9225C2B42FD3F70B009DF74D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -471,18 +503,25 @@
 			};
 			name = Debug;
 		};
-		922DF79B2FC8ADC500F7365E /* Release */ = {
+		9225C2B52FD3F70B009DF74D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
@@ -492,13 +531,18 @@
 			};
 			name = Release;
 		};
-		922DF79D2FC8ADC500F7365E /* Debug */ = {
+		9225C2B72FD3F70B009DF74D /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -511,13 +555,18 @@
 			};
 			name = Debug;
 		};
-		922DF79E2FC8ADC500F7365E /* Release */ = {
+		9225C2B82FD3F70B009DF74D /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = CNUC646H7P;
 				GENERATE_INFOPLIST_FILE = YES;
 				MARKETING_VERSION = 1.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-ObjC",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.kun.ReceiptScannerUITests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = NO;
@@ -533,43 +582,43 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		922DF7702FC8ADC400F7365E /* Build configuration list for PBXProject "ReceiptScanner" */ = {
+		9225C28A2FD3F70A009DF74D /* Build configuration list for PBXProject "ReceiptScanner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				922DF7942FC8ADC500F7365E /* Debug */,
-				922DF7952FC8ADC500F7365E /* Release */,
+				9225C2AE2FD3F70B009DF74D /* Debug */,
+				9225C2AF2FD3F70B009DF74D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		922DF7962FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScanner" */ = {
+		9225C2B02FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScanner" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				922DF7972FC8ADC500F7365E /* Debug */,
-				922DF7982FC8ADC500F7365E /* Release */,
+				9225C2B12FD3F70B009DF74D /* Debug */,
+				9225C2B22FD3F70B009DF74D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		922DF7992FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScannerTests" */ = {
+		9225C2B32FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScannerTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				922DF79A2FC8ADC500F7365E /* Debug */,
-				922DF79B2FC8ADC500F7365E /* Release */,
+				9225C2B42FD3F70B009DF74D /* Debug */,
+				9225C2B52FD3F70B009DF74D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		922DF79C2FC8ADC500F7365E /* Build configuration list for PBXNativeTarget "ReceiptScannerUITests" */ = {
+		9225C2B62FD3F70B009DF74D /* Build configuration list for PBXNativeTarget "ReceiptScannerUITests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				922DF79D2FC8ADC500F7365E /* Debug */,
-				922DF79E2FC8ADC500F7365E /* Release */,
+				9225C2B72FD3F70B009DF74D /* Debug */,
+				9225C2B82FD3F70B009DF74D /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
 	};
-	rootObject = 922DF76D2FC8ADC400F7365E /* Project object */;
+	rootObject = 9225C2872FD3F70A009DF74D /* Project object */;
 }

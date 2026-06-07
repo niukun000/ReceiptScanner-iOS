@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "6533B67A-FD24-495E-BCFB-676818A3BE15",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:ReceiptScanner.xcodeproj",
+      "identifier" : "9225C28E2FD3F70A009DF74D",
+      "name" : "ReceiptScanner"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:ReceiptScanner.xcodeproj",
+        "identifier" : "9225C29B2FD3F70B009DF74D",
+        "name" : "ReceiptScannerTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:ReceiptScanner.xcodeproj",
+        "identifier" : "9225C2A52FD3F70B009DF74D",
+        "name" : "ReceiptScannerUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

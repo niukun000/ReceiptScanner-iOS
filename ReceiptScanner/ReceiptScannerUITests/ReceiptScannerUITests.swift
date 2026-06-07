@@ -2,7 +2,7 @@
 //  ReceiptScannerUITests.swift
 //  ReceiptScannerUITests
 //
-//  Created by Kun Niu on 2026-05-28.
+//  Created by Kun Niu on 2026-06-06.
 //
 
 import XCTest
@@ -29,15 +29,5 @@ final class ReceiptScannerUITests: XCTestCase {
         app.launch()
 
         // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
-    }
-
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
-        }
     }
 }
