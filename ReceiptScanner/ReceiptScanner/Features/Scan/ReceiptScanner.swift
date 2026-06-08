@@ -8,9 +8,41 @@ enum ScannerError: Error {
 
 actor ReceiptScanner {
     
+    struct TextFragment {
+        let text: String
+        let topLeft: CGPoint
+        let topRight: CGPoint
+        let bottomLeft: CGPoint
+        let bottomRight: CGPoint
+        let center: CGPoint
+        let angle: CGFloat // in radians
+        let confidence: Float
+        var used: Bool = false
+        
+        init(obs: VNRecognizedTextObservation) {
+            let candidate = obs.topCandidates(1).first
+            self.text = candidate?.string ?? ""
+            self.confidence = candidate?.confidence ?? 1.0
+            self.topLeft = obs.topLeft
+            self.topRight = obs.topRight
+            self.bottomLeft = obs.bottomLeft
+            self.bottomRight = obs.bottomRight
+            
+            // Calculate center
+            self.center = CGPoint(
+                x: (topLeft.x + topRight.x + bottomLeft.x + bottomRight.x) / 4,
+                y: (topLeft.y + topRight.y + bottomLeft.y + bottomRight.y) / 4
+            )
+            
+            // Calculate angle based on the baseline (bottomLeft to bottomRight)
+            self.angle = atan2(bottomRight.y - bottomLeft.y, bottomRight.x - bottomLeft.x)
+        }
+    }
+    
     func scanForRawText(image: UIImage) async throws -> String {
-        let uiOrientation = await MainActor.run { image.imageOrientation }
-        let cgOrientation = CGImagePropertyOrientation(uiOrientation)
+        let cgOrientation = await MainActor.run {
+            CGImagePropertyOrientation(image.imageOrientation)
+        }
         
         guard let cgImage = image.cgImage else {
             throw ScannerError.invalidImage
@@ -28,42 +60,53 @@ actor ReceiptScanner {
                     return
                 }
                 
-                var lines: [(text: String, y: CGFloat)] = []
-                var fragments = observations.map { obs in
-                    (text: obs.topCandidates(1).first?.string ?? "", box: obs.boundingBox, used: false)
-                }.sorted { $0.box.minX < $1.box.minX }
+                var fragments = observations.map { TextFragment(obs: $0) }
+                // Sort left-to-right to find neighbors
+                fragments.sort { $0.center.x < $1.center.x }
+                
+                var reconstructedLines: [(text: String, sortY: CGFloat)] = []
+                
+                // Calculate average angle to help with top-to-bottom sorting later
+                let avgAngle = fragments.count > 0 ? 
+                    fragments.map { $0.angle }.reduce(0, +) / CGFloat(fragments.count) : 0
                 
                 for i in 0..<fragments.count {
                     if fragments[i].used { continue }
-                    var currentLine: [(text: String, box: CGRect)] = []
-                    var lastBox = fragments[i].box
+                    
+                    var currentLine: [TextFragment] = []
+                    var pivot = fragments[i]
                     fragments[i].used = true
-                    currentLine.append((fragments[i].text, fragments[i].box))
+                    currentLine.append(pivot)
                     
                     var foundNeighbor = true
                     while foundNeighbor {
                         foundNeighbor = false
                         var bestNeighborIndex: Int? = nil
-                        var closestDistance: CGFloat = CGFloat.greatestFiniteMagnitude
-
+                        var minDistance: CGFloat = CGFloat.greatestFiniteMagnitude
+                        
                         for j in 0..<fragments.count {
                             if fragments[j].used { continue }
-                            let nextBox = fragments[j].box
-
-                            if nextBox.minX >= lastBox.minX {
-                                // 1. Calculate vertical overlap
-                                let overlapMin = max(lastBox.minY, nextBox.minY)
-                                let overlapMax = min(lastBox.maxY, nextBox.maxY)
-                                let overlapHeight = max(0, overlapMax - overlapMin)
-                                let minHeight = min(lastBox.height, nextBox.height)
+                            let candidate = fragments[j]
+                            
+                            // 1. Check if candidate is to the right of the pivot
+                            if candidate.center.x > pivot.topRight.x - 0.01 {
                                 
-                                // 2. Calculate horizontal distance
-                                let horizontalDist = nextBox.minX - lastBox.maxX
+                                // 2. Calculate vertical offset relative to pivot's angled baseline
+                                // Line equation from pivot center with pivot angle: 
+                                // dy * (x - x0) - dx * (y - y0) = 0 where (dx, dy) is the angle vector
+                                let dx = cos(pivot.angle)
+                                let dy = sin(pivot.angle)
                                 
-                                // Stable vertical overlap: 40% height match
-                                if overlapHeight > (minHeight * 0.4) {
-                                    if horizontalDist < closestDistance {
-                                        closestDistance = horizontalDist
+                                // Point-to-line distance (vertical offset from the pivot's baseline)
+                                let verticalOffset = abs(dy * (candidate.center.x - pivot.center.x) - dx * (candidate.center.y - pivot.center.y))
+                                
+                                // 3. Threshold: offset should be less than ~50% of pivot's height
+                                let pivotHeight = sqrt(pow(pivot.topLeft.x - pivot.bottomLeft.x, 2) + pow(pivot.topLeft.y - pivot.bottomLeft.y, 2))
+                                
+                                if verticalOffset < (pivotHeight * 0.6) {
+                                    let dist = candidate.center.x - pivot.center.x
+                                    if dist < minDistance {
+                                        minDistance = dist
                                         bestNeighborIndex = j
                                     }
                                 }
@@ -72,18 +115,30 @@ actor ReceiptScanner {
                         
                         if let neighborIndex = bestNeighborIndex {
                             fragments[neighborIndex].used = true
-                            currentLine.append((fragments[neighborIndex].text, fragments[neighborIndex].box))
-                            lastBox = fragments[neighborIndex].box
+                            currentLine.append(fragments[neighborIndex])
+                            pivot = fragments[neighborIndex]
                             foundNeighbor = true
                         }
                     }
                     
-                    let avgY = currentLine.map { $0.box.midY }.reduce(0, +) / CGFloat(currentLine.count)
                     let lineText = currentLine.map { $0.text }.joined(separator: " ")
-                    lines.append((text: lineText, y: avgY))
+                    let avgConfidence = currentLine.map { $0.confidence }.reduce(0, +) / Float(currentLine.count)
+                    
+                    // To sort lines top-to-bottom even when angled:
+                    // Project the average center of the line onto a vector perpendicular to the avgAngle
+                    let lineAvgX = currentLine.map { $0.center.x }.reduce(0, +) / CGFloat(currentLine.count)
+                    let lineAvgY = currentLine.map { $0.center.y }.reduce(0, +) / CGFloat(currentLine.count)
+                    
+                    // Rotated Y coordinate: y' = y*cos(theta) - x*sin(theta)
+                    // This gives us a stable "top-to-bottom" value regardless of receipt rotation
+                    let sortY = lineAvgY * cos(avgAngle) - lineAvgX * sin(avgAngle)
+                    
+                    reconstructedLines.append((text: lineText, sortY: sortY))
                 }
                 
-                let sortedLines = lines.sorted { $0.y > $1.y }.map { $0.text }
+                // Sort lines from top (high sortY) to bottom (low sortY)
+                // Note: Vision Y is 0 at bottom, 1 at top. So higher sortY is "further up".
+                let sortedLines = reconstructedLines.sorted { $0.sortY > $1.sortY }.map { $0.text }
                 continuation.resume(returning: sortedLines.joined(separator: "\n"))
             }
             

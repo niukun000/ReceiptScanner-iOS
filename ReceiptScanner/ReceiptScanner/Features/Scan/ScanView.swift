@@ -6,6 +6,7 @@ struct ScanView: View {
     @State private var viewModel = ScannerViewModel()
     @State private var selectedPhotoItem: PhotosPickerItem?
     @State private var isCameraPresented = false
+    @State private var isNormalPhotoPresented = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
@@ -25,7 +26,7 @@ struct ScanView: View {
                 Button {
                     isCameraPresented = true
                 } label: {
-                    Label("Scan with Camera", systemImage: "camera.viewfinder")
+                    Label("Scan Document", systemImage: "doc.viewfinder")
                         .font(.headline).foregroundColor(.white).padding().frame(maxWidth: .infinity)
                         .background(Color.blue).cornerRadius(12)
                 }
@@ -33,8 +34,8 @@ struct ScanView: View {
                 // 2. Photo Library Picker
                 PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
                     Label("Select from Photos", systemImage: "photo.on.rectangle")
-                        .font(.subheadline).foregroundColor(.blue).padding().frame(maxWidth: .infinity)
-                        .background(Color.blue.opacity(0.1)).cornerRadius(12)
+                        .font(.subheadline).foregroundColor(.blue).padding(.vertical, 10).frame(maxWidth: .infinity)
+                        .background(Color.blue.opacity(0.1)).cornerRadius(10)
                 }
             }
             .padding(.horizontal)
@@ -53,21 +54,59 @@ struct ScanView: View {
                     Section("Review") {
                         LabeledContent("Store", value: parsed.storeName ?? "Unknown")
                         if let date = parsed.date { LabeledContent("Date", value: date.formatted(date: .abbreviated, time: .omitted)) }
+                        if let sub = parsed.subtotal { LabeledContent("Subtotal", value: String(format: "$%.2f", sub)) }
                         if let total = parsed.total { LabeledContent("Total", value: String(format: "$%.2f", total)).font(.headline) }
+                        
+                        if let warning = parsed.validationWarning {
+                            Text(warning).font(.caption).foregroundColor(.red).listRowBackground(Color.red.opacity(0.1))
+                        }
+                        
                         Button { saveReceipt(parsed) } label: {
                             Label("Save to History", systemImage: "checkmark.circle.fill").font(.headline).frame(maxWidth: .infinity)
                         }.buttonStyle(.borderedProminent).listRowBackground(Color.clear)
                     }
+                    
+                    Section("Raw Recognized Text") {
+                        Text(viewModel.recognizedText)
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundColor(.secondary)
+                            .padding(.vertical, 4)
+                    }
+                    
                     if !parsed.items.isEmpty {
                         Section("Items") {
                             ForEach(parsed.items) { item in
-                                HStack {
-                                    VStack(alignment: .leading) {
-                                        Text(item.name)
-                                        if let num = item.itemNumber { Text(num).font(.caption).foregroundStyle(.secondary) }
+                                VStack(alignment: .leading, spacing: 4) {
+                                    HStack {
+                                        VStack(alignment: .leading) {
+                                            Text(item.name)
+                                            if let num = item.itemNumber { Text(num).font(.caption).foregroundStyle(.secondary) }
+                                        }
+                                        Spacer()
+                                        Text(String(format: "$%.2f", item.price))
+                                            .foregroundColor(item.confidence < 0.8 ? .orange : .primary)
                                     }
-                                    Spacer(); Text(String(format: "$%.2f", item.price))
+                                    
+                                    if let disc = item.discount {
+                                        HStack {
+                                            Text("  └ Discount").font(.caption).italic().foregroundStyle(.secondary)
+                                            Spacer()
+                                            Text(String(format: "-$%.2f", abs(disc))).font(.caption).italic().foregroundStyle(.secondary)
+                                        }
+                                    }
                                 }
+                            }
+                            
+                            if let diff = parsed.difference, abs(diff) > 0.01 {
+                                HStack {
+                                    Label("Correction Needed", systemImage: "plus.forwardslash.minus")
+                                        .font(.subheadline).bold().foregroundColor(.red)
+                                    Spacer()
+                                    Text(String(format: "$%.2f", diff))
+                                        .font(.subheadline).bold().foregroundColor(.red)
+                                }
+                                .padding(.vertical, 4)
+                                .listRowBackground(Color.red.opacity(0.05))
                             }
                         }
                     }
