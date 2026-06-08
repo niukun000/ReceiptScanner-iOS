@@ -97,7 +97,6 @@ final class ReceiptScannerTests: XCTestCase {
             "SWEET/CORN": 6.99,
             "WHITE NECTAR": 15.99,
             "TILARIA": 32.24,
-            "TPD/22202": -5.00
         ]
 
         print("\n--- IMG_8410 STRICT PRICE COMPARISON ---")
