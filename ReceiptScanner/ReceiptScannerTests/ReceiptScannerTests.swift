@@ -49,13 +49,13 @@ final class ReceiptScannerTests: XCTestCase {
         }
         
         // 2. Rotate it by 5 degrees to simulate a tilted receipt
-        let rotatedImage = ImageUtils.rotateImage(originalImage, degrees: 5)
+        let rotatedImage = ImageUtils.rotateImage(originalImage, degrees: 15)
         
         let scanner = ReceiptScanner()
         
         // 3. Perform OCR on the rotated image
         let rawText = try await scanner.scanForRawText(image: rotatedImage)
-        
+        print(rawText)
         // 4. Parse the results
         let parsed = ReceiptParser.parse(rawText: rawText)
         let items = parsed.items
