@@ -1,12 +1,11 @@
 import SwiftUI
-import PhotosUI
+import UniformTypeIdentifiers
 import SwiftData
 
 struct ScanView: View {
     @State private var viewModel = ScannerViewModel()
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var isFileImporterPresented = false
     @State private var isCameraPresented = false
-    @State private var isNormalPhotoPresented = false
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     
@@ -31,19 +30,32 @@ struct ScanView: View {
                         .background(Color.blue).cornerRadius(12)
                 }
                 
-                // 2. Photo Library Picker
-                PhotosPicker(selection: $selectedPhotoItem, matching: .images) {
-                    Label("Select from Photos", systemImage: "photo.on.rectangle")
+                // 2. PDF File Importer
+                Button {
+                    isFileImporterPresented = true
+                } label: {
+                    Label("Select PDF from Files", systemImage: "doc.badge.plus")
                         .font(.subheadline).foregroundColor(.blue).padding(.vertical, 10).frame(maxWidth: .infinity)
                         .background(Color.blue.opacity(0.1)).cornerRadius(10)
                 }
             }
             .padding(.horizontal)
-            .onChange(of: selectedPhotoItem) { _, newItem in
-                Task.detached {
-                    if let data = try? await newItem?.loadTransferable(type: Data.self), let uiImage = UIImage(data: data) {
-                        await MainActor.run { viewModel.processImage(uiImage) }
+            .fileImporter(
+                isPresented: $isFileImporterPresented,
+                allowedContentTypes: [.pdf],
+                allowsMultipleSelection: false
+            ) { result in
+                switch result {
+                case .success(let urls):
+                    guard let url = urls.first else { return }
+                    if url.startAccessingSecurityScopedResource() {
+                        defer { url.stopAccessingSecurityScopedResource() }
+                        if let data = try? Data(contentsOf: url) {
+                            viewModel.processPDF(data: data)
+                        }
                     }
+                case .failure(let error):
+                    viewModel.errorMessage = error.localizedDescription
                 }
             }
             
@@ -107,6 +119,36 @@ struct ScanView: View {
                                 }
                                 .padding(.vertical, 4)
                                 .listRowBackground(Color.red.opacity(0.05))
+                            }
+                            
+                            // Summary Section under items
+                            if parsed.subtotal != nil || parsed.tax != nil || parsed.total != nil {
+                                Divider()
+                                
+                                if let sub = parsed.subtotal {
+                                    HStack {
+                                        Text("Subtotal").foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(String(format: "$%.2f", sub)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                if let tax = parsed.tax {
+                                    HStack {
+                                        Text("Tax").foregroundStyle(.secondary)
+                                        Spacer()
+                                        Text(String(format: "$%.2f", tax)).foregroundStyle(.secondary)
+                                    }
+                                }
+                                
+                                if let total = parsed.total {
+                                    HStack {
+                                        Text("Total").bold()
+                                        Spacer()
+                                        Text(String(format: "$%.2f", total)).bold()
+                                    }
+                                    .padding(.top, 4)
+                                }
                             }
                         }
                     }

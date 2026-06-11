@@ -1,6 +1,7 @@
 import XCTest
 @testable import ReceiptScanner
 import UIKit
+import PDFKit
 
 @MainActor
 final class ReceiptScannerTests: XCTestCase {
@@ -68,6 +69,181 @@ final class ReceiptScannerTests: XCTestCase {
         XCTAssertTrue(hasWaterSoftener, "Failed to find Water Softener on rotated image.")
         
         print("Successfully parsed \(items.count) items from a rotated receipt.")
+    }
+    
+    func testCostcoPDFParsing() async throws {
+        // 1. Load the PDF data from Assets.xcassets (now a .dataset)
+        guard let asset = NSDataAsset(name: "CostcoReceipt") else {
+            XCTFail("Could not find CostcoReceipt asset.")
+            return
+        }
+        
+        guard let pdfDocument = PDFDocument(data: asset.data) else {
+            XCTFail("Could not create PDFDocument from data.")
+            return
+        }
+        
+        let scanner = ReceiptScanner()
+        var fullRawText = ""
+        
+        // Iterate through all pages and perform OCR
+        for i in 0..<pdfDocument.pageCount {
+            guard let page = pdfDocument.page(at: i) else { continue }
+            
+            // Render PDF page to a UIImage
+            let pageRect = page.bounds(for: .mediaBox)
+            let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+            let image = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(pageRect)
+                ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
+        
+                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                ctx.cgContext.drawPDFPage(page.pageRef!)
+            }
+            
+            let pageText = try await scanner.scanForRawText(image: image)
+            fullRawText += pageText + "\n"
+        }
+        
+        // 1st: Print out the raw file
+        print("\n--- COSTCO PDF RAW OCR TEXT START ---")
+        print(fullRawText)
+        print("--- COSTCO PDF RAW OCR TEXT END ---")
+        
+        let parsed = ReceiptParser.parse(rawText: fullRawText)
+        
+        XCTAssertEqual(parsed.storeName, "Costco")
+        
+        // 2nd: Test each item and its discount
+        struct ExpectedItem {
+            let searchName: String // Using partial name for robustness against OCR typos
+            let fullName: String
+            let price: Double
+            let discount: Double?
+        }
+        
+        let expectedItems: [ExpectedItem] = [
+            ExpectedItem(searchName: "SALTED DUCK", fullName: "SALTED DUCK", price: 7.99, discount: nil),
+            ExpectedItem(searchName: "RICE CHEPS", fullName: "RICE CHIPS", price: 14.99, discount: -3.00),
+            ExpectedItem(searchName: "RASPBERRIES", fullName: "RASPBERRIES", price: 5.99, discount: nil),
+            ExpectedItem(searchName: "GRAPE TOMATO", fullName: "GRAPE TOMATO", price: 6.99, discount: -2.00),
+            ExpectedItem(searchName: "HYDRO STRAW", fullName: "HYDRO STRAW", price: 9.99, discount: -2.00),
+            ExpectedItem(searchName: "GREEN GRAPES", fullName: "GREEN GRAPES", price: 12.99, discount: nil),
+            ExpectedItem(searchName: "KG WATR500**", fullName: "KS WATR500", price: 4.79, discount: nil),
+            ExpectedItem(searchName: "ENVIRO FEE C", fullName: "ENVIRO FEE", price: 3.20, discount: nil),
+            ExpectedItem(searchName: "DEPOSIT CL", fullName: "DEPOSIT CL", price: 4.00, discount: nil),
+            ExpectedItem(searchName: "COOL BLKT QN", fullName: "COOL BLKT QN", price: 34.99, discount: -7.00),
+            ExpectedItem(searchName: "BANANAS", fullName: "BANANAS", price: 1.99, discount: nil),
+            ExpectedItem(searchName: "MINI CUKES", fullName: "MINI CUKES", price: 3.79, discount: nil),
+            ExpectedItem(searchName: "8PK FILTERS", fullName: "8PK FILTERS", price: 44.99, discount: -9.00),
+            ExpectedItem(searchName: "AMBROSIA APP", fullName: "AMBROSIA APP", price: 10.99, discount: nil),
+            ExpectedItem(searchName: "CROISSANT", fullName: "CROISSANT", price: 6.99, discount: nil)
+        ]
+        
+        print("\n--- ITEM VALIDATION ---")
+        for expected in expectedItems {
+            let found = parsed.items.first { $0.name.uppercased().contains(expected.searchName) }
+            XCTAssertNotNil(found, "Missing item: \(expected.fullName) (searched for '\(expected.searchName)')")
+            
+            if let item = found {
+                XCTAssertEqual(item.price, expected.price, "Price mismatch for \(expected.fullName)")
+                XCTAssertEqual(item.discount, expected.discount, "Discount mismatch for \(expected.fullName)")
+                print("✅ Found: \(item.name) | Price: \(item.price) | Discount: \(item.discount ?? 0.0)")
+            }
+        }
+        
+        // 3rd: Compare the adding of everything to total
+        let subtotalFromItems = parsed.items.reduce(0.0) { $0 + $1.price + ($1.discount ?? 0.0) }
+        let roundedSubtotal = round(subtotalFromItems * 100) / 100
+        
+        // The parser extracts keyword values. Let's verify our sum matches the receipt's subtotal line.
+        XCTAssertEqual(roundedSubtotal, parsed.subtotal ?? 0.0, "Sum of items (\(roundedSubtotal)) does not match parsed subtotal (\(parsed.subtotal ?? 0.0))")
+        
+        let totalCalculated = roundedSubtotal + (parsed.tax ?? 0.0)
+        let finalTotal = round(totalCalculated * 100) / 100
+        
+        XCTAssertEqual(finalTotal, 160.03, "Calculated total (\(finalTotal)) does not match expected 160.03")
+        XCTAssertEqual(finalTotal, parsed.total ?? 0.0, "Calculated total (\(finalTotal)) does not match parsed total (\(parsed.total ?? 0.0))")
+        
+        print("\n--- TOTAL VALIDATION ---")
+        print("Subtotal (Sum of Items): \(roundedSubtotal)")
+        print("Tax (from receipt): \(parsed.tax ?? 0.0)")
+        print("Total (Calculated): \(finalTotal)")
+        print("Total (from receipt): \(parsed.total ?? 0.0)")
+        print("✅ Total validation passed.")
+    }
+    
+    func testCostco2PDFParsing() async throws {
+        guard let asset = NSDataAsset(name: "CostcoReceipt2") else {
+            XCTFail("Could not find CostcoReceipt2 asset.")
+            return
+        }
+        
+        guard let pdfDocument = PDFDocument(data: asset.data) else {
+            XCTFail("Could not create PDFDocument from data.")
+            return
+        }
+        
+        let scanner = ReceiptScanner()
+        var fullRawText = ""
+        
+        for i in 0..<pdfDocument.pageCount {
+            guard let page = pdfDocument.page(at: i) else { continue }
+            let pageRect = page.bounds(for: .mediaBox)
+            let renderer = UIGraphicsImageRenderer(size: pageRect.size)
+            let image = renderer.image { ctx in
+                UIColor.white.set()
+                ctx.fill(pageRect)
+                ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
+                ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
+                ctx.cgContext.drawPDFPage(page.pageRef!)
+            }
+            let pageText = try await scanner.scanForRawText(image: image)
+            fullRawText += pageText + "\n"
+        }
+        
+        print("\n--- COSTCO 2 PDF RAW OCR TEXT START ---")
+        print(fullRawText)
+        print("--- COSTCO 2 PDF RAW OCR TEXT END ---")
+        
+        let parsed = ReceiptParser.parse(rawText: fullRawText)
+        XCTAssertEqual(parsed.storeName, "Costco")
+        
+        // Items to verify:
+        // OMEGA EGGS (Multiple)
+        // EA VIS DIFF 49.99 GP
+        // BANANAS 1.99
+        // WHLSME BREAD 6.99
+        // GOLD KIWI 14.99
+        
+        let hasEggs = parsed.items.contains { $0.name.contains("OMEGA EGGS") }
+        XCTAssertTrue(hasEggs, "Should have found OMEGA EGGS")
+        
+        let hasVisDiff = parsed.items.contains { $0.name.contains("VIS DIFF") && $0.price == 49.99 }
+        XCTAssertTrue(hasVisDiff, "Should have found EA VIS DIFF at 49.99")
+        
+        let hasBread = parsed.items.contains { $0.name.contains("WHLSME BREAD") && $0.price == 6.99 }
+        XCTAssertTrue(hasBread, "Should have found WHLSME BREAD at 6.99")
+        
+        // Total Validation
+        let subtotalFromItems = parsed.items.reduce(0.0) { $0 + $1.price + ($1.discount ?? 0.0) }
+        let roundedSubtotal = round(subtotalFromItems * 100) / 100
+        
+        XCTAssertEqual(roundedSubtotal, 86.93, "Sum of items should be 86.93")
+        XCTAssertEqual(parsed.subtotal, 86.93)
+        
+        let totalCalculated = roundedSubtotal + (parsed.tax ?? 0.0)
+        let finalTotal = round(totalCalculated * 100) / 100
+        
+        XCTAssertEqual(finalTotal, 90.23, "Calculated total should be 90.23")
+        XCTAssertEqual(parsed.total, 90.23)
+        
+        print("\n--- COSTCO 2 TOTAL VALIDATION ---")
+        print("Subtotal: \(roundedSubtotal)")
+        print("Tax: \(parsed.tax ?? 0.0)")
+        print("Total: \(finalTotal)")
+        print("✅ Costco 2 validation passed.")
     }
     
     func testIMG8410StrictPriceComparison() async throws {

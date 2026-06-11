@@ -89,18 +89,54 @@ struct ReceiptParser {
     }
     
     private static func extractKeywordValue(rawText: String, keyword: String) -> Double? {
-        for line in rawText.components(separatedBy: .newlines) {
-            let upper = line.uppercased()
-            if upper.contains(keyword) {
-                let pricePattern = #"\d+\.\d{2}"#
-                if let regex = try? NSRegularExpression(pattern: pricePattern) {
-                    let range = NSRange(location: 0, length: line.utf16.count)
-                    let matches = regex.matches(in: line, options: [], range: range)
-                    if let lastMatch = matches.last {
-                        let pStr = (line as NSString).substring(with: lastMatch.range)
-                        return Double(pStr)
+        let lines = rawText.components(separatedBy: .newlines)
+        let upperKeyword = keyword.uppercased().replacingOccurrences(of: " ", with: "")
+        
+        for (index, line) in lines.enumerated() {
+            let upperLine = line.uppercased().replacingOccurrences(of: " ", with: "")
+            
+            // For 'TOTAL', avoid matching 'SUBTOTAL' or 'TOTALDISCOUNT'
+            if keyword == "TOTAL" && (upperLine.contains("SUBTOTAL") || upperLine.contains("DISCOUNT")) {
+                continue
+            }
+            
+            if upperLine.contains(upperKeyword) {
+                // 1. Check current line for a price
+                var value = findPriceInString(line)
+                
+                // 2. Heuristic: If we are looking for TAX and we found a price,
+                // check if it might actually be the SUBTOTAL accidentally on the same line.
+                // If there's another price on the NEXT line, and it's smaller, it might be the real tax.
+                if keyword == "TAX", let val = value, index + 1 < lines.count {
+                    if let nextVal = findPriceInString(lines[index + 1]), nextVal < val {
+                        return nextVal
                     }
                 }
+                
+                // 3. If no price on current line, check the next line
+                if value == nil && index + 1 < lines.count {
+                    value = findPriceInString(lines[index + 1])
+                }
+                
+                if let val = value {
+                    return val
+                }
+            }
+        }
+        return nil
+    }
+    
+    private static func findPriceInString(_ str: String) -> Double? {
+        // Look for prices like 86.93 or 86,93 or even 86 93 (if space is misread)
+        let pricePattern = #"(\d+[\.,\s]\d{2})"#
+        if let regex = try? NSRegularExpression(pattern: pricePattern) {
+            let range = NSRange(location: 0, length: str.utf16.count)
+            let matches = regex.matches(in: str, options: [], range: range)
+            if let lastMatch = matches.last {
+                var pStr = (str as NSString).substring(with: lastMatch.range)
+                pStr = pStr.replacingOccurrences(of: ",", with: ".")
+                pStr = pStr.replacingOccurrences(of: " ", with: ".")
+                return Double(pStr)
             }
         }
         return nil
@@ -108,20 +144,29 @@ struct ReceiptParser {
     
     private static func parseCostcoReceipt(rawText: String) -> [ReceiptItemData] {
         var items: [ReceiptItemData] = []
-        var pendingPrice: Double? = nil
         
         let lines = rawText.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
-        let priceRegex = #"(.*?)\s+(\d+\.\d{2}(-?))(?:\s+.)?$"#
+        // Stricter price regex: requires a decimal point to avoid matching member numbers
+        let priceRegex = #"(.*?)\s+([\d\.,]+[\.,]\d{2}-?)\s*([A-Z\*]*)$"#
         let skuRegex = #"^(\d{4,8})"#
         
         for line in lines {
             if line.isEmpty { continue }
-            let upperLine = line.uppercased()
-            if upperLine.contains("SUBTOTAL") || (upperLine.contains("TOTAL") && !upperLine.contains("SUBTOTAL")) {
-                break
+            let upperLine = line.uppercased().replacingOccurrences(of: " ", with: "")
+            
+            // Aggressive stop: Break on any line that looks like a summary line once we have items
+            if !items.isEmpty {
+                if upperLine.contains("SUBTOTAL") || 
+                   upperLine.contains("TOTAL") || 
+                   upperLine.contains("AMOUNT") ||
+                   upperLine.contains("TAX") ||
+                   upperLine.contains("SHOPCARD") {
+                    break
+                }
             }
             
-            let isMemberLine = upperLine.contains("MEMBER")
+            // Skip the member line entirely
+            if upperLine.contains("MEMBER") { continue }
             
             if let pMatch = line.range(of: priceRegex, options: .regularExpression) {
                 let matchStr = String(line[pMatch])
@@ -131,41 +176,24 @@ struct ReceiptParser {
                         let namePart = (matchStr as NSString).substring(with: result.range(at: 1))
                         var priceStr = (matchStr as NSString).substring(with: result.range(at: 2))
                         
+                        // Handle comma as decimal separator if present
+                        priceStr = priceStr.replacingOccurrences(of: ",", with: ".")
+                        
                         let isNegative = priceStr.hasSuffix("-")
                         if isNegative { priceStr = String(priceStr.dropLast()) }
                         
                         guard let price = Double(priceStr) else { continue }
                         let currentPrice = isNegative ? -price : price
                         
-                        if isMemberLine {
-                            pendingPrice = currentPrice
-                        } else {
-                            var sku: String? = nil
-                            var finalName = namePart
-                            if let sMatch = finalName.range(of: skuRegex, options: .regularExpression) {
-                                sku = String(finalName[sMatch])
-                                finalName = String(finalName[sMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
-                            }
-                            
-                            if let pPrice = pendingPrice {
-                                items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: pPrice))
-                                pendingPrice = currentPrice
-                            } else {
-                                items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: currentPrice))
-                            }
+                        var sku: String? = nil
+                        var finalName = namePart
+                        if let sMatch = finalName.range(of: skuRegex, options: .regularExpression) {
+                            sku = String(finalName[sMatch])
+                            finalName = String(finalName[sMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
                         }
+                        
+                        items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: currentPrice))
                     }
-                }
-            } else if !isMemberLine && !upperLine.contains("TAX") {
-                if let price = pendingPrice {
-                    var finalName = line
-                    var sku: String? = nil
-                    if let sMatch = finalName.range(of: skuRegex, options: .regularExpression) {
-                        sku = String(finalName[sMatch])
-                        finalName = String(finalName[sMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
-                    }
-                    items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: price))
-                    pendingPrice = nil
                 }
             }
         }
