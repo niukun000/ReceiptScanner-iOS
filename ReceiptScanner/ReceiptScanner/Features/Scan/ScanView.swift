@@ -76,7 +76,14 @@ struct ScanView: View {
                         if let warning = parsed.validationWarning {
                             Text(warning).font(.caption).foregroundColor(.red).listRowBackground(Color.red.opacity(0.1))
                         }
-                        
+
+                        if viewModel.isRepairing {
+                            HStack {
+                                ProgressView().controlSize(.small)
+                                Text("Checking mismatch against raw text…").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+
                         Button { saveReceipt(parsed) } label: {
                             Label("Save to History", systemImage: "checkmark.circle.fill").font(.headline).frame(maxWidth: .infinity)
                         }.buttonStyle(.borderedProminent).listRowBackground(Color.clear)
@@ -200,6 +207,17 @@ struct ScanView: View {
             Button("OK", role: .cancel) {}
         } message: {
             Text(viewModel.errorMessage ?? "")
+        }
+        .alert("Receipt Still Doesn't Match", isPresented: $viewModel.mismatchUnresolved) {
+            Button("Save Anyway") {
+                if let parsed = viewModel.parsedReceipt { saveReceipt(parsed) }
+            }
+            Button("Retake Photo") {
+                viewModel.reset()
+                isCameraPresented = true
+            }
+        } message: {
+            Text("The on-device model couldn't reconcile the items with the printed subtotal. Save it as-is, or retake the picture for a cleaner scan.")
         }
         .sheet(isPresented: $isCameraPresented) {
             CameraScannerView(isPresented: $isCameraPresented) { capturedImage in

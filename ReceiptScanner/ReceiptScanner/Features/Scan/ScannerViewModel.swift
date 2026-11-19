@@ -11,6 +11,11 @@ class ScannerViewModel {
     var isScanning = false
     var isRepairing = false
     var errorMessage: String?
+    // Set when the AI repair ran but the result still doesn't add up — either
+    // it found nothing resolvable, found too many independent misreads to
+    // trust, or its proposed fix still didn't balance. The decision to save
+    // the mismatched receipt anyway or retake the photo is left to the user.
+    var mismatchUnresolved = false
 
     // Bumped whenever a new scan starts or state is reset; in-flight detached
     // tasks compare their captured generation before publishing, so a stale
@@ -34,6 +39,7 @@ class ScannerViewModel {
         parsedReceipt = nil
         isScanning = false
         errorMessage = nil
+        mismatchUnresolved = false
     }
 
     // Corrects OCR row misalignment: slides price/discount/confidence down or up
@@ -41,7 +47,18 @@ class ScannerViewModel {
     // that landed on the wrong row can be walked onto the right one.
     func shiftPrice(at index: Int, down: Bool) {
         guard var parsed = parsedReceipt, parsed.items.indices.contains(index) else { return }
-        var items = parsed.items
+        parsed.items = Self.shiftedItems(parsed.items, at: index, down: down)
+        recomputeValidation(&parsed)
+        parsedReceipt = parsed
+    }
+
+    // Pure version of the same cascade, usable without mutating state — the
+    // AI-shift repair tries this experimentally in both directions and only
+    // keeps the result that resolves the subtotal, so it never has to
+    // introduce a price the model typed itself.
+    private static func shiftedItems(_ items: [ReceiptItemData], at index: Int, down: Bool) -> [ReceiptItemData] {
+        guard items.indices.contains(index) else { return items }
+        var items = items
 
         if down {
             var carry: (price: Double, discount: Double?, confidence: Float) = (0, nil, 0)
@@ -67,9 +84,7 @@ class ScannerViewModel {
             )
         }
 
-        parsed.items = items
-        recomputeValidation(&parsed)
-        parsedReceipt = parsed
+        return items
     }
 
     // Drops a row entirely — for leftover placeholder rows (e.g. "Unmatched Price")
@@ -112,11 +127,13 @@ class ScannerViewModel {
 
     // Only runs when the deterministic parser's own math check already
     // failed (validationWarning != nil) — never second-guesses a receipt the
-    // parser already trusts. The model's job is to spot which raw-text line
-    // the parser misread or dropped; the actual accept/reject decision is
-    // always re-derived from the item sum via recomputeValidation, since the
-    // on-device model isn't reliable for arithmetic and its proposed numbers
-    // are never taken on faith.
+    // parser already trusts. The model's job is to explain *why* the parser's
+    // math is off; its proposed fix is auto-applied only if it actually makes
+    // the sum match the printed subtotal (verified locally, never taken on
+    // the model's word), since the on-device model isn't reliable for
+    // arithmetic. If nothing the model proposes resolves the mismatch, the
+    // user is asked to decide rather than either silently keeping a bad
+    // parse or confidently applying a fix that still doesn't add up.
     func attemptAIRepair() async {
         guard #available(iOS 26.0, *) else { return }
         guard let parsed = parsedReceipt, parsed.validationWarning != nil,
@@ -126,29 +143,50 @@ class ScannerViewModel {
         defer { isRepairing = false }
 
         do {
-            let corrections = try await ReceiptRepairer.suggestCorrections(
+            let diagnosis = try await ReceiptRepairer.diagnose(
                 items: parsed.items,
                 rawText: recognizedText,
                 expectedSubtotal: subtotal
             )
-            guard generation == scanGeneration, !corrections.isEmpty else { return }
+            guard generation == scanGeneration else { return }
 
-            var candidate = parsed
-            for correction in corrections {
-                guard let idx = candidate.items.firstIndex(where: { $0.name == correction.itemName }) else { continue }
-                if let price = correction.correctedPrice { candidate.items[idx].price = price }
-                if let discount = correction.correctedDiscount { candidate.items[idx].discount = discount }
-                // AI-adjusted; still flagged for a user glance, same as any other low-confidence row.
-                candidate.items[idx].confidence = 0.5
+            if diagnosis.isPriceShift, let startName = diagnosis.shiftStartItemName,
+               let startIndex = parsed.items.firstIndex(where: { $0.name == startName }) {
+                // The model only names where a shift begins — pattern-matching
+                // against the raw text is what it's good at. Both possible
+                // shift directions are tried locally, using prices the OCR
+                // already read elsewhere on the receipt, and applied
+                // immediately the moment one actually balances — the model
+                // itself never types a price.
+                for down in [false, true] {
+                    var candidate = parsed
+                    candidate.items = Self.shiftedItems(candidate.items, at: startIndex, down: down)
+                    recomputeValidation(&candidate)
+                    if candidate.validationWarning == nil {
+                        parsedReceipt = candidate
+                        return
+                    }
+                }
+            } else if !diagnosis.corrections.isEmpty && diagnosis.corrections.count <= 3 {
+                // More than 3 independent misreads would mean the scan itself
+                // is unreliable rather than a couple of misread lines, so that
+                // case is deliberately left to fall through to the
+                // mismatchUnresolved prompt below instead of being applied.
+                var candidate = parsed
+                for correction in diagnosis.corrections {
+                    guard let idx = candidate.items.firstIndex(where: { $0.name == correction.itemName }) else { continue }
+                    if let price = correction.correctedPrice { candidate.items[idx].price = price }
+                    if let discount = correction.correctedDiscount { candidate.items[idx].discount = discount }
+                    candidate.items[idx].confidence = 0.5
+                }
+                recomputeValidation(&candidate)
+                if candidate.validationWarning == nil {
+                    parsedReceipt = candidate
+                    return
+                }
             }
 
-            recomputeValidation(&candidate)
-            // Only accept the fix if it actually resolves the mismatch — otherwise
-            // keep the original so the user sees the same honest warning instead
-            // of a confidently wrong "fixed" number.
-            if candidate.validationWarning == nil {
-                parsedReceipt = candidate
-            }
+            mismatchUnresolved = true
         } catch {
             // Best-effort: leave the original parse (and its warning) untouched.
         }
@@ -160,6 +198,7 @@ class ScannerViewModel {
         let generation = scanGeneration
         self.isScanning = true
         self.errorMessage = nil
+        self.mismatchUnresolved = false
         self.selectedImage = nil // Reset preview for PDF
         let scanner = self.scanner
 
@@ -250,6 +289,7 @@ class ScannerViewModel {
         let generation = scanGeneration
         self.isScanning = true
         self.errorMessage = nil
+        self.mismatchUnresolved = false
         let scanner = self.scanner
 
         currentTask = Task.detached(priority: .userInitiated) {

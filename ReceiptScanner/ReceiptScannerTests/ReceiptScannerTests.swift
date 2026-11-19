@@ -141,14 +141,18 @@ final class ReceiptScannerTests: XCTestCase {
         
         let expectedItems: [ExpectedItem] = [
             ExpectedItem(searchName: "SALTED DUCK", fullName: "SALTED DUCK", price: 7.99, discount: nil),
-            ExpectedItem(searchName: "RICE CHEPS", fullName: "RICE CHIPS", price: 14.99, discount: -3.00),
+            // "CH" avoids the I/E ambiguity Vision sometimes reads in "CHIPS".
+            ExpectedItem(searchName: "RICE CH", fullName: "RICE CHIPS", price: 14.99, discount: -3.00),
             ExpectedItem(searchName: "RASPBERRIES", fullName: "RASPBERRIES", price: 5.99, discount: nil),
             ExpectedItem(searchName: "GRAPE TOMATO", fullName: "GRAPE TOMATO", price: 6.99, discount: -2.00),
-            ExpectedItem(searchName: "HYDRO STRAW", fullName: "HYDRO STRAW", price: 9.99, discount: -2.00),
+            // "STRAW" avoids the D/O ambiguity Vision sometimes reads in "HYDRO".
+            ExpectedItem(searchName: "STRAW", fullName: "HYDRO STRAW", price: 9.99, discount: -2.00),
             ExpectedItem(searchName: "GREEN GRAPES", fullName: "GREEN GRAPES", price: 12.99, discount: nil),
-            ExpectedItem(searchName: "KG WATR500**", fullName: "KS WATR500", price: 4.79, discount: nil),
+            // "WATR500" avoids the K/S/G ambiguity in the "KS"/"KG" prefix.
+            ExpectedItem(searchName: "WATR500", fullName: "KS WATR500", price: 4.79, discount: nil),
             ExpectedItem(searchName: "ENVIRO FEE C", fullName: "ENVIRO FEE", price: 3.20, discount: nil),
-            ExpectedItem(searchName: "DEPOSIT CL", fullName: "DEPOSIT CL", price: 4.00, discount: nil),
+            // "EPOSIT CL" avoids the D/Y ambiguity Vision sometimes reads in "DEPOSIT".
+            ExpectedItem(searchName: "EPOSIT CL", fullName: "DEPOSIT CL", price: 4.00, discount: nil),
             ExpectedItem(searchName: "COOL BLKT QN", fullName: "COOL BLKT QN", price: 34.99, discount: -7.00),
             ExpectedItem(searchName: "BANANAS", fullName: "BANANAS", price: 1.99, discount: nil),
             ExpectedItem(searchName: "MINI CUKES", fullName: "MINI CUKES", price: 3.79, discount: nil),
@@ -296,15 +300,20 @@ final class ReceiptScannerTests: XCTestCase {
         attachScanDebugInfo(image: image, rawText: result.rawText, parsed: parsed, name: "testIMG8410StrictPriceComparison")
 
         // 2. Define Expected Prices (Mathematically verified for IMG_8410)
+        // Keys are trimmed to the portion of each name Vision reads reliably —
+        // "GOLD KIWI" and "TILAPIA" both have a middle vowel/consonant that
+        // OCR sometimes misreads, and "SWEET/CORN" sometimes gets an extra
+        // space before the slash — so the search key avoids that span rather
+        // than pinning one specific misread.
         let expectedItems: [String: Double] = [
             "YU CHOY": 5.49,
             "BLUEBERRIES": 6.99,
             "BANANAS": 1.99,
             "CUCUMBERS": 2.79,
-            "GOLD KEWI": 14.99,
-            "SWEET/CORN": 6.99,
+            "GOLD K": 14.99,
+            "SWEET": 6.99,
             "WHITE NECTAR": 15.99,
-            "TILARIA": 32.24,
+            "TIL": 32.24,
         ]
 
         print("\n--- IMG_8410 STRICT PRICE COMPARISON ---")
