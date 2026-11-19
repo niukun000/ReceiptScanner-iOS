@@ -6,8 +6,9 @@ struct ScanView: View {
     @State private var viewModel = ScannerViewModel()
     @State private var isFileImporterPresented = false
     @State private var isCameraPresented = false
+    @State private var dragIndex: Int?
+    @State private var dragOffset: CGFloat = 0
     @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
     
     var body: some View {
         VStack(spacing: 20) {
@@ -40,6 +41,9 @@ struct ScanView: View {
                 }
             }
             .padding(.horizontal)
+            // Prevent overlapping scans: the view model also guards, but
+            // disabling the inputs makes the state visible to the user.
+            .disabled(viewModel.isScanning)
             .fileImporter(
                 isPresented: $isFileImporterPresented,
                 allowedContentTypes: [.pdf],
@@ -87,7 +91,10 @@ struct ScanView: View {
                     
                     if !parsed.items.isEmpty {
                         Section("Items") {
-                            ForEach(parsed.items) { item in
+                            Text("If a price landed on the wrong item, drag it up or down to shift it onto the right row.")
+                                .font(.caption).foregroundStyle(.secondary)
+
+                            ForEach(Array(parsed.items.enumerated()), id: \.element.id) { index, item in
                                 VStack(alignment: .leading, spacing: 4) {
                                     HStack {
                                         VStack(alignment: .leading) {
@@ -97,14 +104,44 @@ struct ScanView: View {
                                         Spacer()
                                         Text(String(format: "$%.2f", item.price))
                                             .foregroundColor(item.confidence < 0.8 ? .orange : .primary)
+                                            .padding(.vertical, 4).padding(.horizontal, 8)
+                                            .background(dragIndex == index ? Color.accentColor.opacity(0.15) : Color.clear)
+                                            .cornerRadius(6)
+                                            .offset(y: dragIndex == index ? dragOffset : 0)
+                                            .gesture(
+                                                DragGesture()
+                                                    .onChanged { value in
+                                                        dragIndex = index
+                                                        dragOffset = value.translation.height
+                                                    }
+                                                    .onEnded { value in
+                                                        let threshold: CGFloat = 24
+                                                        withAnimation(.spring(response: 0.3)) {
+                                                            if value.translation.height > threshold {
+                                                                viewModel.shiftPrice(at: index, down: true)
+                                                            } else if value.translation.height < -threshold {
+                                                                viewModel.shiftPrice(at: index, down: false)
+                                                            }
+                                                            dragIndex = nil
+                                                            dragOffset = 0
+                                                        }
+                                                    }
+                                            )
                                     }
-                                    
+
                                     if let disc = item.discount {
                                         HStack {
                                             Text("  └ Discount").font(.caption).italic().foregroundStyle(.secondary)
                                             Spacer()
                                             Text(String(format: "-$%.2f", abs(disc))).font(.caption).italic().foregroundStyle(.secondary)
                                         }
+                                    }
+                                }
+                                .swipeActions {
+                                    Button(role: .destructive) {
+                                        viewModel.removeItem(id: item.id)
+                                    } label: {
+                                        Label("Remove", systemImage: "trash")
                                     }
                                 }
                             }
@@ -156,6 +193,14 @@ struct ScanView: View {
             }
         }
         .navigationTitle("New Scan")
+        .alert("Scan Failed", isPresented: Binding(
+            get: { viewModel.errorMessage != nil },
+            set: { if !$0 { viewModel.errorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(viewModel.errorMessage ?? "")
+        }
         .sheet(isPresented: $isCameraPresented) {
             CameraScannerView(isPresented: $isCameraPresented) { capturedImage in
                 viewModel.processImage(capturedImage)
@@ -166,11 +211,19 @@ struct ScanView: View {
     }
     
     private func saveReceipt(_ parsed: ParsedReceipt) {
-        let newReceipt = Receipt(storeName: parsed.storeName, receiptDate: parsed.date, total: parsed.total, tax: parsed.tax, rawText: viewModel.recognizedText)
-        for item in parsed.items {
-            newReceipt.items.append(ScannedItem(name: item.name, itemNumber: item.itemNumber, price: item.price))
-        }
+        let newReceipt = Receipt(storeName: parsed.storeName, receiptDate: parsed.date, subtotal: parsed.subtotal, total: parsed.total, tax: parsed.tax, rawText: viewModel.recognizedText)
+        // Insert before wiring the relationship so items are registered with
+        // the same context, and record line order — SwiftData does not
+        // preserve relationship array order.
         modelContext.insert(newReceipt)
-        dismiss()
+        for (index, item) in parsed.items.enumerated() {
+            newReceipt.items.append(ScannedItem(name: item.name, itemNumber: item.itemNumber, price: item.price, discount: item.discount, sortOrder: index))
+        }
+        do {
+            try modelContext.save()
+            viewModel.reset()
+        } catch {
+            viewModel.errorMessage = "Could not save receipt: \(error.localizedDescription)"
+        }
     }
 }

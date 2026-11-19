@@ -7,8 +7,8 @@ import PDFKit
 final class ReceiptScannerTests: XCTestCase {
 
     func testSampleReceiptParsing() async throws {
-        // 1. Load the image from the Main App Bundle
-        let bundle = Bundle(for: ReceiptScanner.self)
+        // 1. Load the image from the test bundle (fixtures live in TestFixtures.xcassets, test-target-only)
+        let bundle = Bundle(for: type(of: self))
         // Using the actual asset name found in Assets.xcassets
         let assetName = "can-anyone-tell-me-what-a-3b-member-is-v0-jqy7dhwmuksd1"
         guard let image = UIImage(named: assetName, in: bundle, with: nil) else {
@@ -17,17 +17,18 @@ final class ReceiptScannerTests: XCTestCase {
         }
         
         let scanner = ReceiptScanner()
-        
+
         // 2. Perform OCR
-        let rawText = try await scanner.scanForRawText(image: image)
+        let result = try await scanner.scan(image: image)
         print("--- RAW OCR TEXT START ---")
-        print(rawText)
+        print(result.rawText)
         print("--- RAW OCR TEXT END ---")
-        
+
         // 3. Parse the results
-        let parsed = ReceiptParser.parse(rawText: rawText)
+        let parsed = ReceiptParser.parse(rawText: result.rawText, rows: result.rows, tableItems: result.tableItems)
         let items = parsed.items
-        
+        attachScanDebugInfo(image: image, rawText: result.rawText, parsed: parsed, name: "testSampleReceiptParsing")
+
         XCTAssertEqual(parsed.storeName, "Costco", "Should have identified store as Costco.")
         XCTAssertFalse(items.isEmpty, "Should have parsed at least some items.")
         
@@ -42,7 +43,7 @@ final class ReceiptScannerTests: XCTestCase {
 
     func testRotatedReceiptParsing() async throws {
         // 1. Load the original image
-        let bundle = Bundle(for: ReceiptScanner.self)
+        let bundle = Bundle(for: type(of: self))
         let assetName = "can-anyone-tell-me-what-a-3b-member-is-v0-jqy7dhwmuksd1"
         guard let originalImage = UIImage(named: assetName, in: bundle, with: nil) else {
             XCTFail("Could not find asset '\(assetName)'.")
@@ -53,14 +54,15 @@ final class ReceiptScannerTests: XCTestCase {
         let rotatedImage = ImageUtils.rotateImage(originalImage, degrees: 15)
         
         let scanner = ReceiptScanner()
-        
+
         // 3. Perform OCR on the rotated image
-        let rawText = try await scanner.scanForRawText(image: rotatedImage)
-        print(rawText)
+        let result = try await scanner.scan(image: rotatedImage)
+        print(result.rawText)
         // 4. Parse the results
-        let parsed = ReceiptParser.parse(rawText: rawText)
+        let parsed = ReceiptParser.parse(rawText: result.rawText, rows: result.rows, tableItems: result.tableItems)
         let items = parsed.items
-        
+        attachScanDebugInfo(image: rotatedImage, rawText: result.rawText, parsed: parsed, name: "testRotatedReceiptParsing")
+
         // 5. Verify accuracy
         XCTAssertEqual(parsed.storeName, "Costco")
         XCTAssertFalse(items.isEmpty, "Should have parsed items even when rotated.")
@@ -72,8 +74,8 @@ final class ReceiptScannerTests: XCTestCase {
     }
     
     func testCostcoPDFParsing() async throws {
-        // 1. Load the PDF data from Assets.xcassets (now a .dataset)
-        guard let asset = NSDataAsset(name: "CostcoReceipt") else {
+        // 1. Load the PDF data from the test bundle's TestFixtures.xcassets (now a .dataset)
+        guard let asset = NSDataAsset(name: "CostcoReceipt", bundle: Bundle(for: type(of: self))) else {
             XCTFail("Could not find CostcoReceipt asset.")
             return
         }
@@ -85,11 +87,14 @@ final class ReceiptScannerTests: XCTestCase {
         
         let scanner = ReceiptScanner()
         var fullRawText = ""
-        
+        var allRows: [TextRow] = []
+        var tableItemsPerPage: [[ReceiptItemData]] = []
+        var pageImages: [UIImage] = []
+
         // Iterate through all pages and perform OCR
         for i in 0..<pdfDocument.pageCount {
             guard let page = pdfDocument.page(at: i) else { continue }
-            
+
             // Render PDF page to a UIImage
             let pageRect = page.bounds(for: .mediaBox)
             let renderer = UIGraphicsImageRenderer(size: pageRect.size)
@@ -97,22 +102,33 @@ final class ReceiptScannerTests: XCTestCase {
                 UIColor.white.set()
                 ctx.fill(pageRect)
                 ctx.cgContext.translateBy(x: 0.0, y: pageRect.size.height)
-        
+
                 ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
                 ctx.cgContext.drawPDFPage(page.pageRef!)
             }
-            
-            let pageText = try await scanner.scanForRawText(image: image)
-            fullRawText += pageText + "\n"
+            pageImages.append(image)
+
+            let pageResult = try await scanner.scan(image: image)
+            fullRawText += pageResult.rawText + "\n"
+            allRows.append(contentsOf: pageResult.rows)
+            if let tableItems = pageResult.tableItems {
+                tableItemsPerPage.append(tableItems)
+            }
         }
-        
+
         // 1st: Print out the raw file
         print("\n--- COSTCO PDF RAW OCR TEXT START ---")
         print(fullRawText)
         print("--- COSTCO PDF RAW OCR TEXT END ---")
-        
-        let parsed = ReceiptParser.parse(rawText: fullRawText)
-        
+
+        let combinedTableItems: [ReceiptItemData]? = tableItemsPerPage.count == pdfDocument.pageCount
+            ? tableItemsPerPage.flatMap { $0 }
+            : nil
+        let parsed = ReceiptParser.parse(rawText: fullRawText, rows: allRows, tableItems: combinedTableItems)
+        if let firstPage = pageImages.first {
+            attachScanDebugInfo(image: firstPage, rawText: fullRawText, parsed: parsed, name: "testCostcoPDFParsing")
+        }
+
         XCTAssertEqual(parsed.storeName, "Costco")
         
         // 2nd: Test each item and its discount
@@ -175,7 +191,7 @@ final class ReceiptScannerTests: XCTestCase {
     }
     
     func testCostco2PDFParsing() async throws {
-        guard let asset = NSDataAsset(name: "CostcoReceipt2") else {
+        guard let asset = NSDataAsset(name: "CostcoReceipt2", bundle: Bundle(for: type(of: self))) else {
             XCTFail("Could not find CostcoReceipt2 asset.")
             return
         }
@@ -187,7 +203,10 @@ final class ReceiptScannerTests: XCTestCase {
         
         let scanner = ReceiptScanner()
         var fullRawText = ""
-        
+        var allRows: [TextRow] = []
+        var tableItemsPerPage: [[ReceiptItemData]] = []
+        var pageImages: [UIImage] = []
+
         for i in 0..<pdfDocument.pageCount {
             guard let page = pdfDocument.page(at: i) else { continue }
             let pageRect = page.bounds(for: .mediaBox)
@@ -199,15 +218,27 @@ final class ReceiptScannerTests: XCTestCase {
                 ctx.cgContext.scaleBy(x: 1.0, y: -1.0)
                 ctx.cgContext.drawPDFPage(page.pageRef!)
             }
-            let pageText = try await scanner.scanForRawText(image: image)
-            fullRawText += pageText + "\n"
+            pageImages.append(image)
+
+            let pageResult = try await scanner.scan(image: image)
+            fullRawText += pageResult.rawText + "\n"
+            allRows.append(contentsOf: pageResult.rows)
+            if let tableItems = pageResult.tableItems {
+                tableItemsPerPage.append(tableItems)
+            }
         }
-        
+
         print("\n--- COSTCO 2 PDF RAW OCR TEXT START ---")
         print(fullRawText)
         print("--- COSTCO 2 PDF RAW OCR TEXT END ---")
-        
-        let parsed = ReceiptParser.parse(rawText: fullRawText)
+
+        let combinedTableItems: [ReceiptItemData]? = tableItemsPerPage.count == pdfDocument.pageCount
+            ? tableItemsPerPage.flatMap { $0 }
+            : nil
+        let parsed = ReceiptParser.parse(rawText: fullRawText, rows: allRows, tableItems: combinedTableItems)
+        if let firstPage = pageImages.first {
+            attachScanDebugInfo(image: firstPage, rawText: fullRawText, parsed: parsed, name: "testCostco2PDFParsing")
+        }
         XCTAssertEqual(parsed.storeName, "Costco")
         
         // Items to verify:
@@ -248,20 +279,21 @@ final class ReceiptScannerTests: XCTestCase {
     
     func testIMG8410StrictPriceComparison() async throws {
         // 1. Load image
-        let bundle = Bundle(for: ReceiptScanner.self)
+        let bundle = Bundle(for: type(of: self))
         guard let image = UIImage(named: "IMG_8410", in: bundle, with: nil) else {
             XCTFail("Could not find IMG_8410.")
             return
         }
 
         let scanner = ReceiptScanner()
-        let rawText = try await scanner.scanForRawText(image: image)
-        
+        let result = try await scanner.scan(image: image)
+
         print("\n--- IMG_8410 RAW OCR TEXT START ---")
-        print(rawText)
+        print(result.rawText)
         print("--- IMG_8410 RAW OCR TEXT END ---")
-        
-        let parsed = ReceiptParser.parse(rawText: rawText)
+
+        let parsed = ReceiptParser.parse(rawText: result.rawText, rows: result.rows, tableItems: result.tableItems)
+        attachScanDebugInfo(image: image, rawText: result.rawText, parsed: parsed, name: "testIMG8410StrictPriceComparison")
 
         // 2. Define Expected Prices (Mathematically verified for IMG_8410)
         let expectedItems: [String: Double] = [
@@ -294,5 +326,70 @@ final class ReceiptScannerTests: XCTestCase {
                 XCTFail("Missing item: \(expectedName)")
             }
         }
+    }
+
+    // MARK: - New real-world receipts (no verified expected values yet)
+    //
+    // These are diagnostic, not strict: I don't have hand-verified ground
+    // truth for these receipts, so they only assert basic sanity (store
+    // identified, items non-empty). Run them, open Xcode's Report Navigator
+    // (Cmd+9 → this test run → click a test → Attachments) to see the image,
+    // raw OCR text, and parsed result side by side, and check the printed
+    // output below against the real receipt. Paste back anything wrong.
+
+    private func diagnosticParseTest(assetName: String, testName: String) async throws {
+        let bundle = Bundle(for: type(of: self))
+        guard let image = UIImage(named: assetName, in: bundle, with: nil) else {
+            XCTFail("Could not find asset '\(assetName)'.")
+            return
+        }
+
+        let scanner = ReceiptScanner()
+        let result = try await scanner.scan(image: image)
+        let parsed = ReceiptParser.parse(rawText: result.rawText, rows: result.rows, tableItems: result.tableItems)
+        attachScanDebugInfo(image: image, rawText: result.rawText, parsed: parsed, name: testName)
+
+        print("\n--- \(testName) RAW OCR TEXT START ---")
+        print(result.rawText)
+        print("--- \(testName) RAW OCR TEXT END ---")
+
+        print("\n--- \(testName) PARSED RESULT ---")
+        print("Store: \(parsed.storeName ?? "nil")")
+        print("Date: \(parsed.date.map(String.init(describing:)) ?? "nil")")
+        print("Subtotal: \(parsed.subtotal.map { String(format: "%.2f", $0) } ?? "nil")")
+        print("Tax: \(parsed.tax.map { String(format: "%.2f", $0) } ?? "nil")")
+        print("Total: \(parsed.total.map { String(format: "%.2f", $0) } ?? "nil")")
+        if let warning = parsed.validationWarning { print("Warning: \(warning)") }
+
+        print("\n--- \(testName) ITEMS (\(parsed.items.count)) ---")
+        for item in parsed.items {
+            var line = "\(item.itemNumber ?? "-")\t\(item.name)\t$\(String(format: "%.2f", item.price))"
+            if let discount = item.discount {
+                line += "\tdiscount: $\(String(format: "%.2f", discount))"
+            }
+            if item.confidence < 1.0 {
+                line += "\t(confidence: \(item.confidence))"
+            }
+            print(line)
+        }
+
+        XCTAssertEqual(parsed.storeName, "Costco", "Should have identified store as Costco.")
+        XCTAssertFalse(parsed.items.isEmpty, "Should have parsed at least some items.")
+    }
+
+    func testCostco3Parsing() async throws {
+        try await diagnosticParseTest(assetName: "COSTCO 3", testName: "testCostco3Parsing")
+    }
+
+    func testCostco4Parsing() async throws {
+        try await diagnosticParseTest(assetName: "COSTCO 4", testName: "testCostco4Parsing")
+    }
+
+    func testCostco5Parsing() async throws {
+        try await diagnosticParseTest(assetName: "COSTCO 5", testName: "testCostco5Parsing")
+    }
+
+    func testWholesaleParsing() async throws {
+        try await diagnosticParseTest(assetName: "WHOLESALE", testName: "testWholesaleParsing")
     }
 }

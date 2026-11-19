@@ -23,6 +23,11 @@ struct HistoryView: View {
             }
         }
         .navigationTitle("History")
+        .toolbar {
+            NavigationLink(destination: SpendingSummaryView()) {
+                Label("Spending", systemImage: "chart.bar")
+            }
+        }
         .overlay {
             if receipts.isEmpty {
                 ContentUnavailableView("No History", systemImage: "clock.arrow.circlepath", description: Text("Scanned receipts will appear here."))
@@ -37,20 +42,36 @@ struct ReceiptDetailView: View {
         List {
             Section("Info") {
                 LabeledContent("Store", value: receipt.storeName ?? "Unknown")
+                if let receiptDate = receipt.receiptDate {
+                    LabeledContent("Receipt Date", value: receiptDate.formatted(date: .long, time: .omitted))
+                }
                 LabeledContent("Scan Date", value: receipt.scanDate.formatted(date: .long, time: .shortened))
             }
             Section("Items") {
-                ForEach(receipt.items) { item in
-                    HStack {
-                        VStack(alignment: .leading) {
-                            Text(item.name).font(.headline)
-                            if let num = item.itemNumber { Text(num).font(.caption).foregroundStyle(.secondary) }
+                // Relationship arrays come back in arbitrary order — sort by
+                // the recorded receipt line order.
+                ForEach(receipt.items.sorted { $0.sortOrder < $1.sortOrder }) { item in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            VStack(alignment: .leading) {
+                                Text(item.name).font(.headline)
+                                if let num = item.itemNumber { Text(num).font(.caption).foregroundStyle(.secondary) }
+                            }
+                            Spacer(); Text(String(format: "$%.2f", item.price))
                         }
-                        Spacer(); Text(String(format: "$%.2f", item.price))
+                        if let disc = item.discount {
+                            HStack {
+                                Text("  └ Discount").font(.caption).italic().foregroundStyle(.secondary)
+                                Spacer()
+                                Text(String(format: "-$%.2f", abs(disc))).font(.caption).italic().foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
             Section("Totals") {
+                if let subtotal = receipt.subtotal { LabeledContent("Subtotal", value: String(format: "$%.2f", subtotal)) }
+                if let tax = receipt.tax { LabeledContent("Tax", value: String(format: "$%.2f", tax)) }
                 if let total = receipt.total { LabeledContent("Total", value: String(format: "$%.2f", total)).font(.headline) }
             }
         }.navigationTitle(receipt.storeName ?? "Receipt")

@@ -6,160 +6,183 @@ enum ScannerError: Error {
     case invalidImage
 }
 
-actor ReceiptScanner {
-    
-    struct TextFragment {
-        let text: String
-        let topLeft: CGPoint
-        let topRight: CGPoint
-        let bottomLeft: CGPoint
-        let bottomRight: CGPoint
-        let center: CGPoint
-        let angle: CGFloat // in radians
-        let confidence: Float
-        var used: Bool = false
-        
-        init(obs: VNRecognizedTextObservation) {
-            let candidate = obs.topCandidates(1).first
-            self.text = candidate?.string ?? ""
-            self.confidence = candidate?.confidence ?? 1.0
-            self.topLeft = obs.topLeft
-            self.topRight = obs.topRight
-            self.bottomLeft = obs.bottomLeft
-            self.bottomRight = obs.bottomRight
-            
-            // Calculate center
-            self.center = CGPoint(
-                x: (topLeft.x + topRight.x + bottomLeft.x + bottomRight.x) / 4,
-                y: (topLeft.y + topRight.y + bottomLeft.y + bottomRight.y) / 4
-            )
-            
-            // Calculate angle based on the baseline (bottomLeft to bottomRight)
-            self.angle = atan2(bottomRight.y - bottomLeft.y, bottomRight.x - bottomLeft.x)
-        }
-    }
-    
-    func scanForRawText(image: UIImage) async throws -> String {
+/// Result of a single-image scan: the flattened text (for display and for
+/// header/keyword extraction), the geometry-grouped rows (for item parsing
+/// when no structured table was available), and, on iOS 26+, items already
+/// extracted from a detected table when one was found and passed sanity checks.
+struct ReceiptScanResult: Sendable {
+    let rawText: String
+    let rows: [TextRow]
+    let tableItems: [ReceiptItemData]?
+}
+
+/// Abstracts OCR so `ScannerViewModel` can be unit-tested against a fake
+/// scanner instead of running real Vision requests on every test.
+/// `nonisolated` so conforming types can run `scan` on their own actor
+/// instead of inheriting this module's default MainActor isolation.
+nonisolated protocol ReceiptScanning: Sendable {
+    func scan(image: UIImage) async throws -> ReceiptScanResult
+}
+
+actor ReceiptScanner: ReceiptScanning {
+
+    func scan(image: UIImage) async throws -> ReceiptScanResult {
         let cgOrientation = await MainActor.run {
             CGImagePropertyOrientation(image.imageOrientation)
         }
-        
+
         guard let cgImage = image.cgImage else {
             throw ScannerError.invalidImage
         }
-        
+
+#if EXPERIMENTAL_VISION_TABLES
+        if #available(iOS 26.0, *) {
+            return try await scanWithDocumentRequest(cgImage: cgImage, orientation: cgOrientation)
+        }
+#endif
+        // The document request is only worth its second OCR pass when table
+        // extraction is enabled. Its transcript also segments lines its own way,
+        // which breaks the keyword extractors' assumption that a label and its
+        // value share a line — so outside the experimental path, row-derived
+        // text is the single source of truth on every OS version.
+        let (rawText, rows) = try await scanWithLegacyRequest(cgImage: cgImage, orientation: cgOrientation)
+        return ReceiptScanResult(rawText: rawText, rows: rows, tableItems: nil)
+    }
+
+    // MARK: - iOS 26+: Vision document/table recognition
+
+    @available(iOS 26.0, *)
+    private func scanWithDocumentRequest(cgImage: CGImage, orientation: CGImagePropertyOrientation) async throws -> ReceiptScanResult {
+        var request = RecognizeDocumentsRequest()
+        request.textRecognitionOptions.useLanguageCorrection = true
+
+        let observations = try await request.perform(on: cgImage, orientation: orientation)
+        guard let document = observations.first?.document else {
+            return ReceiptScanResult(rawText: "", rows: [], tableItems: nil)
+        }
+
+        // Experimental table extraction (requires matching iOS 26 Vision SDK).
+        // Enable by defining EXPERIMENTAL_VISION_TABLES when the API surface matches.
+#if EXPERIMENTAL_VISION_TABLES
+        let rawText = document.text.transcript
+        let priceRegex = #"^\d{1,4}[.,]\d{2}-?$"#
+        let skuRegex = #"^\d{3,8}$"#
+
+        for table in document.tables {
+            // NOTE: Update these property names to match the real SDK before enabling.
+            let rowCount = table.rowCount
+            let columnCount = table.columnCount
+            guard rowCount >= 3, rowCount <= 200, (2...6).contains(columnCount) else { continue }
+
+            var cellsByRow: [Int: [(columnStart: Int, text: String)]] = [:]
+            for cell in table.cells {
+                let text = cell.content.text.transcript.trimmingCharacters(in: CharacterSet.whitespacesAndNewlines)
+                cellsByRow[cell.rowIndex.lowerBound, default: []].append((cell.columnIndex.lowerBound, text))
+            }
+
+            var priceRowMatches = 0
+            var items: [ReceiptItemData] = []
+
+            for rowIndex in cellsByRow.keys.sorted() {
+                guard let rowCells = cellsByRow[rowIndex] else { continue }
+                let cellTexts = rowCells.sorted { $0.columnStart < $1.columnStart }.map(\.text)
+                guard !cellTexts.isEmpty else { continue }
+
+                let upperRowText = cellTexts.joined().uppercased().replacingOccurrences(of: " ", with: "")
+
+                if !items.isEmpty {
+                    if ["SUBTOTAL", "TOTAL", "AMOUNT", "TAX", "SHOPCARD"].contains(where: { upperRowText.contains($0) }) {
+                        break
+                    }
+                }
+                if upperRowText.contains("MEMBER") { continue }
+
+                guard let lastCellText = cellTexts.last,
+                      lastCellText.range(of: priceRegex, options: .regularExpression) != nil,
+                      let price = TextGeometry.parsePriceToken(lastCellText) else {
+                    continue
+                }
+                priceRowMatches += 1
+
+                var sku: String? = nil
+                var nameParts = Array(cellTexts.dropLast())
+                if let first = nameParts.first, first.range(of: skuRegex, options: .regularExpression) != nil {
+                    sku = first
+                    nameParts.removeFirst()
+                }
+                let name = nameParts.joined(separator: " ").trimmingCharacters(in: CharacterSet.whitespaces)
+                guard !name.isEmpty else { continue }
+
+                items.append(ReceiptItemData(itemNumber: sku, name: name, price: price))
+            }
+
+            guard !items.isEmpty, priceRowMatches * 2 >= rowCount else { continue }
+            return ReceiptScanResult(rawText: rawText, rows: [], tableItems: items)
+        }
+#else
+        // Table parsing disabled for current SDK; fall back to legacy geometry grouping.
+#endif
+
+        // No usable table — fall back to the proven fragment/row-grouping path
+        // rather than trusting document.text.lines' internal segmentation,
+        // which hasn't been field-tested for column interleaving on receipts.
+        let (legacyRawText, rows) = try await scanWithLegacyRequest(cgImage: cgImage, orientation: orientation)
+        return ReceiptScanResult(rawText: legacyRawText, rows: rows, tableItems: nil)
+    }
+
+    // MARK: - iOS 17+: legacy Vision text recognition + geometric row grouping
+
+    private func scanWithLegacyRequest(cgImage: CGImage, orientation cgOrientation: CGImagePropertyOrientation) async throws -> (rawText: String, rows: [TextRow]) {
+        // Vision can invoke the request's completion handler with an error AND
+        // make handler.perform throw for the same failure; resuming a checked
+        // continuation twice is a fatal error, so every resume goes through
+        // this claim-once gate.
+        final class ResumeOnce: @unchecked Sendable {
+            private let lock = NSLock()
+            private var resumed = false
+            func claim() -> Bool {
+                lock.lock()
+                defer { lock.unlock() }
+                if resumed { return false }
+                resumed = true
+                return true
+            }
+        }
+        let once = ResumeOnce()
+
         return try await withCheckedThrowingContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
+                guard once.claim() else { return }
                 if let error = error {
                     continuation.resume(throwing: error)
                     return
                 }
-                
+
                 guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: "")
+                    continuation.resume(returning: ("", []))
                     return
                 }
-                
-                var fragments = observations.map { TextFragment(obs: $0) }
-                // Sort left-to-right to find neighbors
-                fragments.sort { $0.center.x < $1.center.x }
-                
-                var reconstructedLines: [(text: String, sortY: CGFloat)] = []
-                
-                // Calculate average angle to help with top-to-bottom sorting later
-                let avgAngle = fragments.count > 0 ? 
-                    fragments.map { $0.angle }.reduce(0, +) / CGFloat(fragments.count) : 0
-                
-                for i in 0..<fragments.count {
-                    if fragments[i].used { continue }
-                    
-                    var currentLine: [TextFragment] = []
-                    var pivot = fragments[i]
-                    fragments[i].used = true
-                    currentLine.append(pivot)
-                    
-                    var foundNeighbor = true
-                    while foundNeighbor {
-                        foundNeighbor = false
-                        var bestNeighborIndex: Int? = nil
-                        var minDistance: CGFloat = CGFloat.greatestFiniteMagnitude
-                        
-                        for j in 0..<fragments.count {
-                            if fragments[j].used { continue }
-                            let candidate = fragments[j]
-                            
-                            // 1. Check if candidate is to the right of the pivot
-                            if candidate.center.x > pivot.topRight.x - 0.01 {
-                                
-                                // 2. Calculate vertical offset relative to pivot's angled baseline
-                                // Line equation from pivot center with pivot angle: 
-                                // dy * (x - x0) - dx * (y - y0) = 0 where (dx, dy) is the angle vector
-                                let dx = cos(pivot.angle)
-                                let dy = sin(pivot.angle)
-                                
-                                // Point-to-line distance (vertical offset from the pivot's baseline)
-                                let verticalOffset = abs(dy * (candidate.center.x - pivot.center.x) - dx * (candidate.center.y - pivot.center.y))
-                                
-                                // 3. Threshold: offset should be less than ~50% of pivot's height
-                                let pivotHeight = sqrt(pow(pivot.topLeft.x - pivot.bottomLeft.x, 2) + pow(pivot.topLeft.y - pivot.bottomLeft.y, 2))
-                                
-                                if verticalOffset < (pivotHeight * 0.6) {
-                                    let dist = candidate.center.x - pivot.center.x
-                                    if dist < minDistance {
-                                        minDistance = dist
-                                        bestNeighborIndex = j
-                                    }
-                                }
-                            }
-                        }
-                        
-                        if let neighborIndex = bestNeighborIndex {
-                            fragments[neighborIndex].used = true
-                            currentLine.append(fragments[neighborIndex])
-                            pivot = fragments[neighborIndex]
-                            foundNeighbor = true
-                        }
-                    }
-                    
-                    let lineText = currentLine.map { $0.text }.joined(separator: " ")
-                    let avgConfidence = currentLine.map { $0.confidence }.reduce(0, +) / Float(currentLine.count)
-                    
-                    // To sort lines top-to-bottom even when angled:
-                    // Project the average center of the line onto a vector perpendicular to the avgAngle
-                    let lineAvgX = currentLine.map { $0.center.x }.reduce(0, +) / CGFloat(currentLine.count)
-                    let lineAvgY = currentLine.map { $0.center.y }.reduce(0, +) / CGFloat(currentLine.count)
-                    
-                    // Rotated Y coordinate: y' = y*cos(theta) - x*sin(theta)
-                    // This gives us a stable "top-to-bottom" value regardless of receipt rotation
-                    let sortY = lineAvgY * cos(avgAngle) - lineAvgX * sin(avgAngle)
-                    
-                    reconstructedLines.append((text: lineText, sortY: sortY))
-                }
-                
-                // Sort lines from top (high sortY) to bottom (low sortY)
-                // Note: Vision Y is 0 at bottom, 1 at top. So higher sortY is "further up".
-                let sortedLines = reconstructedLines.sorted { $0.sortY > $1.sortY }.map { $0.text }
-                continuation.resume(returning: sortedLines.joined(separator: "\n"))
+
+                let fragments = observations.map { TextFragment(obs: $0) }
+                let rows = TextGeometry.groupIntoRows(fragments)
+                let rawText = rows.map(\.text).joined(separator: "\n")
+                continuation.resume(returning: (rawText, rows))
             }
-            
+
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            
+
             let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation, options: [:])
-            
+
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     try handler.perform([request])
                 } catch {
+                    guard once.claim() else { return }
                     continuation.resume(throwing: error)
                 }
             }
         }
-    }
-    
-    func scanAndParse(image: UIImage) async throws -> [ReceiptItemData] {
-        let rawText = try await scanForRawText(image: image)
-        return await ReceiptParser.parse(rawText: rawText).items
     }
 }
 
@@ -178,3 +201,4 @@ extension CGImagePropertyOrientation {
         }
     }
 }
+
