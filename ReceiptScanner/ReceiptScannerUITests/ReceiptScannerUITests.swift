@@ -30,4 +30,12 @@ final class ReceiptScannerUITests: XCTestCase {
 
         // Use XCTAssert and related functions to verify your tests produce the correct results.
     }
+
+    @MainActor
+    func testScanScreenPassesAccessibilityAudit() throws {
+        let app = XCUIApplication()
+        app.launch()
+        XCTAssertTrue(app.buttons["Scan Document"].waitForExistence(timeout: 5))
+        try app.performAccessibilityAudit(for: .contrast)
+    }
 }

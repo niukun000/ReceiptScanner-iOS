@@ -2,6 +2,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 import SwiftData
 
+extension Color {
+    // Darker than systemBlue so white text clears 4.5:1 contrast outright,
+    // rather than relying on bold/large-text's lower 3:1 threshold.
+    static let scanPrimaryAction = Color(red: 0, green: 90.0 / 255, blue: 200.0 / 255)
+}
+
 struct ScanView: View {
     @State private var viewModel = ScannerViewModel()
     @State private var isFileImporterPresented = false
@@ -22,28 +28,45 @@ struct ScanView: View {
             }
             
             VStack(spacing: 12) {
-                // 1. Documentation Camera Button
-                Button {
-                    isCameraPresented = true
-                } label: {
-                    Label("Scan Document", systemImage: "doc.viewfinder")
-                        .font(.headline).foregroundColor(.white).padding().frame(maxWidth: .infinity)
-                        .background(Color.blue).cornerRadius(12)
-                }
-                
-                // 2. PDF File Importer
-                Button {
-                    isFileImporterPresented = true
-                } label: {
-                    Label("Select PDF from Files", systemImage: "doc.badge.plus")
-                        .font(.subheadline).foregroundColor(.blue).padding(.vertical, 10).frame(maxWidth: .infinity)
-                        .background(Color.blue.opacity(0.1)).cornerRadius(10)
-                }
+                // Plain tappable views, not Button: on this OS, Button (any
+                // style) renders its fill through an automatic translucent
+                // material that washes out in Dark Mode, which fails contrast
+                // regardless of the color passed in. A plain view + tap
+                // gesture keeps the fill exactly the color we specify.
+                Label("Scan Document", systemImage: "doc.viewfinder")
+                    .font(.headline)
+                    .foregroundStyle(.white)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(Color.scanPrimaryAction, in: RoundedRectangle(cornerRadius: 12))
+                    .contentShape(RoundedRectangle(cornerRadius: 12))
+                    .onTapGesture {
+                        guard !viewModel.isScanning else { return }
+                        isCameraPresented = true
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Scan Document")
+
+                Label("Select PDF from Files", systemImage: "doc.badge.plus")
+                    .font(.subheadline)
+                    .foregroundStyle(.primary)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(Color(.systemGray5), in: RoundedRectangle(cornerRadius: 10))
+                    .contentShape(RoundedRectangle(cornerRadius: 10))
+                    .onTapGesture {
+                        guard !viewModel.isScanning else { return }
+                        isFileImporterPresented = true
+                    }
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel("Select PDF from Files")
             }
             .padding(.horizontal)
-            // Prevent overlapping scans: the view model also guards, but
-            // disabling the inputs makes the state visible to the user.
-            .disabled(viewModel.isScanning)
+            // Prevent overlapping scans: the view model also guards (the taps
+            // above are no-ops while scanning), but dimming makes the state
+            // visible to the user. Plain views + onTapGesture don't respond to
+            // .disabled(), unlike Button, so this is done explicitly.
+            .opacity(viewModel.isScanning ? 0.4 : 1.0)
             .fileImporter(
                 isPresented: $isFileImporterPresented,
                 allowedContentTypes: [.pdf],
