@@ -123,7 +123,9 @@ final class ReceiptRepairTests: XCTestCase {
     }
 
     private func brokenIMG8410() async throws -> (rows: [TextRow], blueberriesLine: Int, yuChoyLine: Int) {
-        let image = try XCTUnwrap(UIImage(named: "IMG_8410", in: Bundle(for: type(of: self)), with: nil))
+        guard let image = UIImage(named: "IMG_8410", in: Bundle(for: type(of: self)), with: nil) else {
+            throw XCTSkip("'IMG_8410' isn't checked in (real receipt, kept local-only). See .gitignore.")
+        }
         var rows = try await ReceiptScanner().scan(image: image).rows
 
         guard let memberLine = rows.firstIndex(where: { $0.text.uppercased().contains("MEMBER") }),

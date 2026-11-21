@@ -12,10 +12,9 @@ final class ReceiptScannerTests: XCTestCase {
         // Using the actual asset name found in Assets.xcassets
         let assetName = "can-anyone-tell-me-what-a-3b-member-is-v0-jqy7dhwmuksd1"
         guard let image = UIImage(named: assetName, in: bundle, with: nil) else {
-            XCTFail("Could not find asset '\(assetName)'. Please ensure it is in Assets.xcassets and the 'ReceiptScanner' target is checked.")
-            return
+            throw XCTSkip("'\(assetName)' isn't checked in (personal/scraped test fixture, kept local-only). See .gitignore.")
         }
-        
+
         let scanner = ReceiptScanner()
 
         // 2. Perform OCR
@@ -46,8 +45,7 @@ final class ReceiptScannerTests: XCTestCase {
         let bundle = Bundle(for: type(of: self))
         let assetName = "can-anyone-tell-me-what-a-3b-member-is-v0-jqy7dhwmuksd1"
         guard let originalImage = UIImage(named: assetName, in: bundle, with: nil) else {
-            XCTFail("Could not find asset '\(assetName)'.")
-            return
+            throw XCTSkip("'\(assetName)' isn't checked in (personal/scraped test fixture, kept local-only). See .gitignore.")
         }
         
         // 2. Rotate it by 5 degrees to simulate a tilted receipt
@@ -76,8 +74,7 @@ final class ReceiptScannerTests: XCTestCase {
     func testCostcoPDFParsing() async throws {
         // 1. Load the PDF data from the test bundle's TestFixtures.xcassets (now a .dataset)
         guard let asset = NSDataAsset(name: "CostcoReceipt", bundle: Bundle(for: type(of: self))) else {
-            XCTFail("Could not find CostcoReceipt asset.")
-            return
+            throw XCTSkip("'CostcoReceipt' isn't checked in (real receipt, kept local-only). See .gitignore.")
         }
         
         guard let pdfDocument = PDFDocument(data: asset.data) else {
@@ -196,8 +193,7 @@ final class ReceiptScannerTests: XCTestCase {
     
     func testCostco2PDFParsing() async throws {
         guard let asset = NSDataAsset(name: "CostcoReceipt2", bundle: Bundle(for: type(of: self))) else {
-            XCTFail("Could not find CostcoReceipt2 asset.")
-            return
+            throw XCTSkip("'CostcoReceipt2' isn't checked in (real receipt, kept local-only). See .gitignore.")
         }
         
         guard let pdfDocument = PDFDocument(data: asset.data) else {
@@ -285,8 +281,7 @@ final class ReceiptScannerTests: XCTestCase {
         // 1. Load image
         let bundle = Bundle(for: type(of: self))
         guard let image = UIImage(named: "IMG_8410", in: bundle, with: nil) else {
-            XCTFail("Could not find IMG_8410.")
-            return
+            throw XCTSkip("'IMG_8410' isn't checked in (real receipt, kept local-only). See .gitignore.")
         }
 
         let scanner = ReceiptScanner()
@@ -349,8 +344,7 @@ final class ReceiptScannerTests: XCTestCase {
     private func diagnosticParseTest(assetName: String, testName: String) async throws {
         let bundle = Bundle(for: type(of: self))
         guard let image = UIImage(named: assetName, in: bundle, with: nil) else {
-            XCTFail("Could not find asset '\(assetName)'.")
-            return
+            throw XCTSkip("'\(assetName)' isn't checked in (real receipt, kept local-only). See .gitignore.")
         }
 
         let scanner = ReceiptScanner()

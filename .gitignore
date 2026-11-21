@@ -66,3 +66,15 @@ fastlane/test_output
 *.xcworkspace
 xcshareddata/
 xcuserdata/
+
+# Personal test fixtures (real receipts + a scraped Reddit image) — kept
+# locally for development, never pushed. The tests that use them skip
+# gracefully (XCTSkip) when the asset is missing.
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/COSTCO 3.imageset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/COSTCO 4.imageset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/COSTCO 5.imageset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/CostcoReceipt.dataset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/CostcoReceipt2.dataset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/IMG_8410.imageset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/WHOLESALE.imageset/
+ReceiptScanner/ReceiptScannerTests/TestFixtures.xcassets/can-anyone-tell-me-what-a-3b-member-is-v0-jqy7dhwmuksd1.imageset/
