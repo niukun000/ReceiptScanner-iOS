@@ -1,92 +1,133 @@
 import Foundation
 import FoundationModels
 
-@available(iOS 26.0, *)
-@Generable
-struct ItemCorrection {
-    @Guide(description: "Exact name of the item being corrected, copied verbatim from the 'Parsed items' list in the prompt")
-    var itemName: String
+/// One instruction to move a price that OCR placed on the wrong line onto the
+/// line of the item it belongs to. Line numbers index `TextRow`s, which are
+/// exactly the lines of the raw OCR text.
+nonisolated struct PriceMove: Equatable, Sendable {
+    let fromLine: Int
+    let toLine: Int
+    let price: String
+}
 
-    @Guide(description: "The item's correct price as printed on the receipt, only if the parsed price was wrong. Omit if the price was already correct.")
-    var correctedPrice: Double?
+/// Proposes price moves for a receipt whose items don't add up to its printed
+/// subtotal. Abstracted so tests can substitute canned moves for the model.
+nonisolated protocol ReceiptRepairing: Sendable {
+    func proposeMoves(lines: [String], subtotal: Double) async throws -> [PriceMove]
+}
 
-    @Guide(description: "The item's correct discount as printed on the receipt, as a negative number (e.g. -2.00), only if a discount was missing or wrong. Omit if there's no discount or it was already correct.")
-    var correctedDiscount: Double?
+nonisolated struct ModelUnavailableError: Error {}
+
+nonisolated struct AppleIntelligenceRepairer: ReceiptRepairing {
+    func proposeMoves(lines: [String], subtotal: Double) async throws -> [PriceMove] {
+        guard #available(iOS 26.0, *) else { throw ModelUnavailableError() }
+        return try await ReceiptRepairer.proposeMoves(lines: lines, subtotal: subtotal)
+    }
 }
 
 @available(iOS 26.0, *)
 @Generable
-struct ReceiptDiagnosis {
-    @Guide(description: """
-        True only if a single price that OCR missed entirely caused every item from one point \
-        onward to display a price that actually belongs to the next item in the list — i.e. \
-        prices are shifted by one row starting at some item. False if the mismatches instead \
-        look like independent misreads of specific prices or discounts.
-        """)
-    var isPriceShift: Bool
+struct GeneratedPriceMove {
+    @Guide(description: "Line number the price is currently printed on")
+    var fromLine: Int
 
-    @Guide(description: "Only meaningful when isPriceShift is true: the exact name of the item, copied verbatim from the 'Parsed items' list, where the shift begins — the first item whose displayed price actually belongs to a different item.")
-    var shiftStartItemName: String?
+    @Guide(description: "Line number of the item this price actually belongs to")
+    var toLine: Int
 
-    @Guide(description: "One entry per item that needs its price or discount corrected to match the raw text. Leave this empty when isPriceShift is true, or when nothing needs correcting.")
-    var corrections: [ItemCorrection]
+    @Guide(description: "The price exactly as written on fromLine, e.g. 5.49 or 2.00-")
+    var price: String
 }
 
-/// Asks the on-device model to explain why the parsed items disagree with the
-/// raw OCR text. Only ever invoked after the deterministic parser's own
-/// arithmetic check has already flagged a mismatch (`ParsedReceipt.validationWarning`)
-/// — this never second-guesses a receipt the parser already trusts.
-///
-/// Apple's guidance is that the on-device model isn't reliable for
-/// arithmetic, so it is never asked to type out a corrected number for a
-/// shifted price. For the shift case it only names *where* the shift starts —
-/// pattern-matching against the raw text is what it's good at — and the
-/// caller resolves the actual fix by moving prices the OCR already read
-/// elsewhere on the receipt onto the right rows (see
-/// `ScannerViewModel.offerShift`). Only for genuinely independent misreads
-/// does it report a specific corrected value, and even then the caller
-/// re-validates the proposed numbers against the receipt's own math rather
-/// than trusting the model's judgment that a fix is correct.
+@available(iOS 26.0, *)
+@Generable
+struct GeneratedRepairPlan {
+    @Guide(description: "Every price that must move to a different line. Empty if no move would fix the receipt.")
+    var moves: [GeneratedPriceMove]
+}
+
+/// The model only ever points at prices that already exist in the OCR text
+/// and says which line they belong on — it never writes a number of its own.
+/// `RowRepair` applies the moves to the original OCR fragments and re-runs the
+/// normal parser, so the parser stays the only thing that pairs names with
+/// prices, and the result is accepted only if it balances.
 @available(iOS 26.0, *)
 enum ReceiptRepairer {
-    struct ModelUnavailable: Error {}
-
-    static func diagnose(items: [ReceiptItemData], rawText: String, expectedSubtotal: Double) async throws -> ReceiptDiagnosis {
-        guard SystemLanguageModel.default.isAvailable else { throw ModelUnavailable() }
+    static func proposeMoves(lines: [String], subtotal: Double) async throws -> [PriceMove] {
+        guard SystemLanguageModel.default.isAvailable else { throw ModelUnavailableError() }
 
         let session = LanguageModelSession(instructions: """
-            You proofread a receipt-scanning app's parsed items against the raw OCR text of \
-            the receipt. The parser's item list didn't add up to the receipt's printed \
-            subtotal. There are two common causes: (1) a single price was missed entirely by \
-            OCR, which drags every later item's price up onto the previous item, shifting \
-            everything by one row from that point on; or (2) one or a few independent \
-            misreads, where a specific price or discount was read wrong. Decide which case \
-            this is. If it's a shift, only name the item where the shift starts — do not type \
-            out any corrected prices for it, the app will handle that part itself using prices \
-            already present elsewhere on the receipt. If it's independent misreads, list only \
-            the specific item corrections, copying prices verbatim from the raw text.
+            You fix OCR line-alignment mistakes on store receipts. OCR sometimes puts an \
+            item's price on a neighboring line: onto a header line such as the member \
+            number, onto the next item's line, or onto a line of its own. When that \
+            happens, every later item can end up one line off. Each item line should end \
+            with exactly one price. Report which prices must move to which line so every \
+            item line gets its own price. Only move prices that already appear in the \
+            text; never invent, change, or recalculate a number.
             """)
 
-        let itemsDescription = items.map { item in
-            "- \(item.name) | price: \(item.price) | discount: \(item.discount.map { String($0) } ?? "none")"
-        }.joined(separator: "\n")
-
+        let numbered = lines.enumerated().map { "\($0.offset): \($0.element)" }.joined(separator: "\n")
         let prompt = """
-            Raw OCR text from the receipt:
-            \"\"\"
-            \(rawText)
-            \"\"\"
+            Receipt lines (line number: text):
+            \(numbered)
 
-            Parsed items, in receipt order:
-            \(itemsDescription)
-
-            The receipt's printed subtotal is \(expectedSubtotal). Is this a single shifted \
-            price, or independent misreads? If shifted, which item does the shift start at? \
-            If independent misreads, which item(s) have a price or discount that doesn't \
-            match what's actually printed in the raw text?
+            The items should add up to the printed subtotal of \(String(format: "%.2f", subtotal)), \
+            but they don't. Which prices are on the wrong line, and which line does each belong on?
             """
 
-        let response = try await session.respond(to: prompt, generating: ReceiptDiagnosis.self)
-        return response.content
+        let response = try await session.respond(to: prompt, generating: GeneratedRepairPlan.self)
+        return response.content.moves.map { PriceMove(fromLine: $0.fromLine, toLine: $0.toLine, price: $0.price) }
+    }
+}
+
+enum RowRepair {
+    /// Applies `moves` to the OCR rows and re-parses. Returns nil unless the
+    /// result balances against the same printed subtotal. Moves relocate
+    /// existing fragments only, so no number can be added or altered.
+    static func reparse(rows: [TextRow], applying moves: [PriceMove], expectedSubtotal: Double) -> (parsed: ParsedReceipt, rows: [TextRow])? {
+        guard let edited = apply(moves, to: rows) else { return nil }
+        let rawText = edited.map(\.text).joined(separator: "\n")
+        var parsed = ReceiptParser.parse(rawText: rawText, rows: edited)
+        // A move onto the SUBTOTAL line would change the number we validate
+        // against, so the printed subtotal must come through untouched.
+        guard parsed.validationWarning == nil, !parsed.subtotalIsSynthesized,
+              let subtotal = parsed.subtotal, abs(subtotal - expectedSubtotal) < 0.005 else { return nil }
+        parsed.wasAIRepaired = true
+        return (parsed, edited)
+    }
+
+    static func apply(_ moves: [PriceMove], to rows: [TextRow]) -> [TextRow]? {
+        guard !moves.isEmpty else { return nil }
+        var removals: [Int: Set<Int>] = [:]
+        var additions: [Int: [TextFragment]] = [:]
+
+        for move in moves {
+            guard rows.indices.contains(move.fromLine), rows.indices.contains(move.toLine),
+                  move.fromLine != move.toLine,
+                  let movedValue = priceValue(move.price) else { return nil }
+            let source = rows[move.fromLine].fragments
+            let alreadyMoved = removals[move.fromLine, default: []]
+            // The model must name a price that is really on that line.
+            guard let fragmentIndex = source.indices.first(where: {
+                !alreadyMoved.contains($0) && priceValue(source[$0].text).map { abs($0 - movedValue) < 0.005 } == true
+            }) else { return nil }
+            removals[move.fromLine, default: []].insert(fragmentIndex)
+            additions[move.toLine, default: []].append(source[fragmentIndex])
+        }
+
+        // All removals happen before any additions, so a chain of moves (a
+        // whole block shifted by one line) doesn't depend on move order.
+        return rows.indices.map { index in
+            let kept = rows[index].fragments.enumerated()
+                .filter { !(removals[index]?.contains($0.offset) ?? false) }
+                .map(\.element)
+            // Appended last because the parser reads a row's rightmost price.
+            return TextRow(fragments: kept + (additions[index] ?? []))
+        }
+    }
+
+    /// Value of a fragment that starts with a price ("5.49", "2.00-", "22.99 GP").
+    private static func priceValue(_ text: String) -> Double? {
+        guard let range = text.range(of: #"^\s*-?\d{1,4}[.,]\d{2}-?"#, options: .regularExpression) else { return nil }
+        return TextGeometry.parsePriceToken(String(text[range]))
     }
 }

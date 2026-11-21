@@ -11,10 +11,9 @@ class ScannerViewModel {
     var isScanning = false
     var isRepairing = false
     var errorMessage: String?
-    // Set when the AI repair ran but the result still doesn't add up — either
-    // it found nothing resolvable, found too many independent misreads to
-    // trust, or its proposed fix still didn't balance. The decision to save
-    // the mismatched receipt anyway or retake the photo is left to the user.
+    // Set when the receipt still doesn't add up after the one AI repair
+    // attempt (or the model is unavailable); the user decides whether to save
+    // it anyway or retake the photo.
     var mismatchUnresolved = false
 
     // Bumped whenever a new scan starts or state is reset; in-flight detached
@@ -23,13 +22,18 @@ class ScannerViewModel {
     private var scanGeneration = 0
 
     private let scanner: ReceiptScanning
+    private let repairer: ReceiptRepairing
+    private var scannedRows: [TextRow] = []
+    private var hasAttemptedRepair = false
 
-    // Handle to the most recently started scan. Tests await this instead of
-    // sleeping to know when processImage/processPDF has finished publishing.
+    // Handles to the most recently started scan and repair. Tests await these
+    // instead of sleeping to know when work has finished publishing.
     private(set) var currentTask: Task<Void, Never>?
+    private(set) var repairTask: Task<Void, Never>?
 
-    init(scanner: ReceiptScanning = ReceiptScanner()) {
+    init(scanner: ReceiptScanning = ReceiptScanner(), repairer: ReceiptRepairing = AppleIntelligenceRepairer()) {
         self.scanner = scanner
+        self.repairer = repairer
     }
 
     func reset() {
@@ -40,6 +44,8 @@ class ScannerViewModel {
         isScanning = false
         errorMessage = nil
         mismatchUnresolved = false
+        scannedRows = []
+        hasAttemptedRepair = false
     }
 
     // Corrects OCR row misalignment: slides price/discount/confidence down or up
@@ -125,70 +131,33 @@ class ScannerViewModel {
         }
     }
 
-    // Only runs when the deterministic parser's own math check already
-    // failed (validationWarning != nil) — never second-guesses a receipt the
-    // parser already trusts. The model's job is to explain *why* the parser's
-    // math is off; its proposed fix is auto-applied only if it actually makes
-    // the sum match the printed subtotal (verified locally, never taken on
-    // the model's word), since the on-device model isn't reliable for
-    // arithmetic. If nothing the model proposes resolves the mismatch, the
-    // user is asked to decide rather than either silently keeping a bad
-    // parse or confidently applying a fix that still doesn't add up.
+    // Runs at most once per scan, and only when the parser's own subtotal
+    // check failed. The model proposes moving prices between OCR lines; the
+    // moves are applied to the original fragments and the normal parser runs
+    // again, so the result is kept only if it actually balances. Anything
+    // else — no model, a bad plan, or a plan that doesn't balance — goes to
+    // the user as save-or-retake.
     func attemptAIRepair() async {
-        guard #available(iOS 26.0, *) else { return }
-        guard let parsed = parsedReceipt, parsed.validationWarning != nil,
-              let subtotal = parsed.subtotal, !isRepairing else { return }
+        guard !hasAttemptedRepair, !isRepairing,
+              let parsed = parsedReceipt, parsed.validationWarning != nil,
+              !parsed.subtotalIsSynthesized, let subtotal = parsed.subtotal else { return }
+        hasAttemptedRepair = true
         let generation = scanGeneration
+        let rows = scannedRows
         isRepairing = true
         defer { isRepairing = false }
 
-        do {
-            let diagnosis = try await ReceiptRepairer.diagnose(
-                items: parsed.items,
-                rawText: recognizedText,
-                expectedSubtotal: subtotal
-            )
-            guard generation == scanGeneration else { return }
+        var repaired: (parsed: ParsedReceipt, rows: [TextRow])?
+        if !rows.isEmpty, let moves = try? await repairer.proposeMoves(lines: rows.map(\.text), subtotal: subtotal) {
+            repaired = RowRepair.reparse(rows: rows, applying: moves, expectedSubtotal: subtotal)
+        }
+        guard generation == scanGeneration else { return }
 
-            if diagnosis.isPriceShift, let startName = diagnosis.shiftStartItemName,
-               let startIndex = parsed.items.firstIndex(where: { $0.name == startName }) {
-                // The model only names where a shift begins — pattern-matching
-                // against the raw text is what it's good at. Both possible
-                // shift directions are tried locally, using prices the OCR
-                // already read elsewhere on the receipt, and applied
-                // immediately the moment one actually balances — the model
-                // itself never types a price.
-                for down in [false, true] {
-                    var candidate = parsed
-                    candidate.items = Self.shiftedItems(candidate.items, at: startIndex, down: down)
-                    recomputeValidation(&candidate)
-                    if candidate.validationWarning == nil {
-                        parsedReceipt = candidate
-                        return
-                    }
-                }
-            } else if !diagnosis.corrections.isEmpty && diagnosis.corrections.count <= 3 {
-                // More than 3 independent misreads would mean the scan itself
-                // is unreliable rather than a couple of misread lines, so that
-                // case is deliberately left to fall through to the
-                // mismatchUnresolved prompt below instead of being applied.
-                var candidate = parsed
-                for correction in diagnosis.corrections {
-                    guard let idx = candidate.items.firstIndex(where: { $0.name == correction.itemName }) else { continue }
-                    if let price = correction.correctedPrice { candidate.items[idx].price = price }
-                    if let discount = correction.correctedDiscount { candidate.items[idx].discount = discount }
-                    candidate.items[idx].confidence = 0.5
-                }
-                recomputeValidation(&candidate)
-                if candidate.validationWarning == nil {
-                    parsedReceipt = candidate
-                    return
-                }
-            }
-
+        if let repaired {
+            parsedReceipt = repaired.parsed
+            scannedRows = repaired.rows
+        } else {
             mismatchUnresolved = true
-        } catch {
-            // Best-effort: leave the original parse (and its warning) untouched.
         }
     }
 
@@ -199,6 +168,7 @@ class ScannerViewModel {
         self.isScanning = true
         self.errorMessage = nil
         self.mismatchUnresolved = false
+        self.hasAttemptedRepair = false
         self.selectedImage = nil // Reset preview for PDF
         let scanner = self.scanner
 
@@ -272,13 +242,15 @@ class ScannerViewModel {
                 : nil
 
             let parsed = ReceiptParser.parse(rawText: combinedText, rows: combinedRows, tableItems: combinedTableItems)
+            let rows = combinedRows
             await MainActor.run {
                 guard generation == self.scanGeneration else { return }
                 self.selectedImage = firstPageImage // Use first page as preview
                 self.recognizedText = combinedText
+                self.scannedRows = rows
                 self.parsedReceipt = parsed
                 self.isScanning = false
-                if parsed.validationWarning != nil { Task { await self.attemptAIRepair() } }
+                if parsed.validationWarning != nil { self.repairTask = Task { await self.attemptAIRepair() } }
             }
         }
     }
@@ -290,6 +262,7 @@ class ScannerViewModel {
         self.isScanning = true
         self.errorMessage = nil
         self.mismatchUnresolved = false
+        self.hasAttemptedRepair = false
         let scanner = self.scanner
 
         currentTask = Task.detached(priority: .userInitiated) {
@@ -301,9 +274,10 @@ class ScannerViewModel {
                     guard generation == self.scanGeneration else { return }
                     self.selectedImage = resized
                     self.recognizedText = result.rawText
+                    self.scannedRows = result.rows
                     self.parsedReceipt = parsed
                     self.isScanning = false
-                    if parsed.validationWarning != nil { Task { await self.attemptAIRepair() } }
+                    if parsed.validationWarning != nil { self.repairTask = Task { await self.attemptAIRepair() } }
                 }
             } catch {
                 await MainActor.run {

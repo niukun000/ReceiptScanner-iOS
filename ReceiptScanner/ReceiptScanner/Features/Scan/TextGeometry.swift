@@ -14,12 +14,23 @@ struct TextFragment: Sendable {
 
     init(obs: VNRecognizedTextObservation) {
         let candidate = obs.topCandidates(1).first
-        self.text = candidate?.string ?? ""
-        self.confidence = candidate?.confidence ?? 1.0
-        self.topLeft = obs.topLeft
-        self.topRight = obs.topRight
-        self.bottomLeft = obs.bottomLeft
-        self.bottomRight = obs.bottomRight
+        self.init(
+            text: candidate?.string ?? "",
+            topLeft: obs.topLeft,
+            topRight: obs.topRight,
+            bottomLeft: obs.bottomLeft,
+            bottomRight: obs.bottomRight,
+            confidence: candidate?.confidence ?? 1.0
+        )
+    }
+
+    init(text: String, topLeft: CGPoint, topRight: CGPoint, bottomLeft: CGPoint, bottomRight: CGPoint, confidence: Float = 1.0) {
+        self.text = text
+        self.confidence = confidence
+        self.topLeft = topLeft
+        self.topRight = topRight
+        self.bottomLeft = bottomLeft
+        self.bottomRight = bottomRight
 
         self.center = CGPoint(
             x: (topLeft.x + topRight.x + bottomLeft.x + bottomRight.x) / 4,

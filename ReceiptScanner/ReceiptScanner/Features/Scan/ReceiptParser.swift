@@ -23,6 +23,7 @@ struct ParsedReceipt {
     // item edits and must never be validated against as "receipt truth".
     var subtotalIsSynthesized: Bool = false
     var totalIsSynthesized: Bool = false
+    var wasAIRepaired: Bool = false
 }
 
 struct ReceiptParser {

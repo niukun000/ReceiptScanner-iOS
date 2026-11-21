@@ -77,6 +77,11 @@ struct ScanView: View {
                             Text(warning).font(.caption).foregroundColor(.red).listRowBackground(Color.red.opacity(0.1))
                         }
 
+                        if parsed.wasAIRepaired {
+                            Label("Some prices were moved to the correct items automatically. Please double-check them.", systemImage: "wand.and.stars")
+                                .font(.caption).foregroundStyle(.orange)
+                        }
+
                         if viewModel.isRepairing {
                             HStack {
                                 ProgressView().controlSize(.small)
