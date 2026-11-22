@@ -1,0 +1,99 @@
+
+# iOS Continuous Integration
+# Automatically build and test Receipt Scanner.
+# No App Store credentials or distribution certificates required.
+
+name: iOS CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# The workflow only needs permission to read source code.
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Build and run XCTest
+    runs-on: macos-26
+    timeout-minutes: 40
+
+    steps:
+      # Download this repository onto GitHub's macOS runner.
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      # Confirm the development tools are available.
+      - name: Inspect Xcode environment
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcrun simctl list devices available
+
+      # Compile the app and run unit/UI tests.
+      - name: Build and test
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROJECT="ReceiptScanner/ReceiptScanner.xcodeproj"
+
+          if [[ ! -d "$PROJECT" ]]; then
+            echo "::error::Xcode project not found: $PROJECT"
+            exit 1
+          fi
+
+          # Detect configuration or scheme problems early.
+          xcodebuild -list -project "$PROJECT"
+
+          # Select an available iPhone simulator dynamically,
+          # rather than hardcoding a potentially missing model.
+          SIM_ID="$(
+            xcrun simctl list -j devices available |
+            python3 -c '
+          import json
+          import sys
+
+          devices = json.load(sys.stdin)["devices"]
+          phones = [
+              d["udid"]
+              for group in devices.values()
+              for d in group
+              if d.get("name", "").startswith("iPhone")
+              and d.get("isAvailable", False)
+          ]
+          print(phones[0] if phones else "")
+          '
+          )"
+
+          if [[ -z "$SIM_ID" ]]; then
+            echo "::error::No available iPhone simulator."
+            exit 1
+          fi
+
+          # pipefail ensures xcodebuild failures are not hidden
+          # by the tee command that saves the diagnostic log.
+          xcodebuild test \
+            -project "$PROJECT" \
+            -scheme ReceiptScanner \
+            -destination "platform=iOS Simulator,id=$SIM_ID" \
+            -resultBundlePath "$RUNNER_TEMP/ReceiptScanner.xcresult" \
+            -parallel-testing-enabled NO \
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee "$RUNNER_TEMP/xcodebuild.log"
+
+      # Preserve logs and test results for troubleshooting.
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-test-diagnostics
+          path: |
+            ${{ runner.temp }}/ReceiptScanner.xcresult
+            ${{ runner.temp }}/xcodebuild.log
+          if-no-files-found: warn
+          retention-days: 7
