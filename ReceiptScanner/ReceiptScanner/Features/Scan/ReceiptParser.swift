@@ -26,7 +26,9 @@ struct ParsedReceipt {
     var wasAIRepaired: Bool = false
 }
 
-struct ReceiptParser {
+// Pure parsing logic with no UI/shared state — nonisolated so it can run on
+// the detached background tasks that perform OCR, matching ReceiptScanning.
+nonisolated struct ReceiptParser {
     static func parse(rawText: String, rows: [TextRow], tableItems: [ReceiptItemData]? = nil) -> ParsedReceipt {
         let store = identifyStore(rawText: rawText)
         let date = extractDate(rawText: rawText)
@@ -35,9 +37,7 @@ struct ReceiptParser {
         let total = extractKeywordValue(rawText: rawText, keyword: "TOTAL")
 
         var items: [ReceiptItemData]
-        debugPrint("rawText", rawText)
-        debugPrint("rows", rows.map(\.text).joined(separator: "\n"))
-        
+
         if let tableItems, !tableItems.isEmpty {
             items = tableItems
         } else {
@@ -83,20 +83,14 @@ struct ReceiptParser {
             mergedItems.append(item)
         }
         items = mergedItems
-        debugPrint("items: \(mergedItems)")
         var warning: String? = nil
         var diff: Double? = nil
         let sum = items.reduce(0) { $0 + $1.price + ($1.discount ?? 0) }
         let roundedSum = round(sum * 100) / 100
 
-        if let sub = subtotal {
-            if abs(roundedSum - sub) > 0.01 {
-                diff = sub - roundedSum
-                warning = "Warning: Calculated subtotal ($\(String(format: "%.2f", roundedSum))) does not match receipt subtotal ($\(String(format: "%.2f", sub)))."
-                print(warning!)
-            } else {
-                print("✅ Subtotal validation passed: $\(String(format: "%.2f", roundedSum)) == $\(String(format: "%.2f", sub))")
-            }
+        if let sub = subtotal, abs(roundedSum - sub) > 0.01 {
+            diff = sub - roundedSum
+            warning = "Warning: Calculated subtotal ($\(String(format: "%.2f", roundedSum))) does not match receipt subtotal ($\(String(format: "%.2f", sub)))."
         }
 
         // Fall back to the item-level sum when free-text keyword search comes

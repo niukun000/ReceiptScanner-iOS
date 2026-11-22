@@ -2,7 +2,7 @@ import Foundation
 import CoreGraphics
 @preconcurrency import Vision
 
-struct TextFragment: Sendable {
+nonisolated struct TextFragment: Sendable {
     let text: String
     let topLeft: CGPoint
     let topRight: CGPoint
@@ -44,13 +44,13 @@ struct TextFragment: Sendable {
 
 /// One visual row of a receipt: fragments that share roughly the same vertical
 /// position, pre-sorted left-to-right by reading order.
-struct TextRow: Sendable {
+nonisolated struct TextRow: Sendable {
     let fragments: [TextFragment]
 
     var text: String { fragments.map(\.text).joined(separator: " ") }
 }
 
-enum TextGeometry {
+nonisolated enum TextGeometry {
     /// Groups fragments into visual rows using vertical (Y) proximity only —
     /// row membership is decided independently of left-to-right order, which is
     /// applied afterward, within each row. This is the key structural fix over

@@ -9,6 +9,15 @@
     }
   ],
   "defaultOptions" : {
+    "codeCoverage" : {
+      "targets" : [
+        {
+          "containerPath" : "container:ReceiptScanner.xcodeproj",
+          "identifier" : "9225C28E2FD3F70A009DF74D",
+          "name" : "ReceiptScanner"
+        }
+      ]
+    },
     "performanceAntipatternCheckerEnabled" : true,
     "targetForVariableExpansion" : {
       "containerPath" : "container:ReceiptScanner.xcodeproj",

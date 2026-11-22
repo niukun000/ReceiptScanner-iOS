@@ -87,7 +87,17 @@ struct ScanView: View {
             }
             
             if viewModel.isScanning {
-                ProgressView("Analyzing...").padding()
+                VStack(spacing: 12) {
+                    ProgressView("Analyzing...")
+                    Button(role: .cancel) {
+                        viewModel.cancelScan()
+                    } label: {
+                        Text("Cancel").foregroundStyle(.primary)
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("cancelScanButton")
+                }
+                .padding()
             } else if let parsed = viewModel.parsedReceipt {
                 List {
                     Section("Review") {
@@ -109,6 +119,15 @@ struct ScanView: View {
                             HStack {
                                 ProgressView().controlSize(.small)
                                 Text("Checking mismatch against raw text…").font(.caption).foregroundStyle(.secondary)
+                                Spacer()
+                                Button(role: .cancel) {
+                                    viewModel.cancelScan()
+                                } label: {
+                                    Text("Cancel").font(.caption).foregroundStyle(.primary)
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                                .accessibilityIdentifier("cancelRepairButton")
                             }
                         }
 

@@ -1,65 +1,49 @@
-# 🧾 Welcome to the Receipt Scanner Project!
+# Receipt Scanner
 
-This guide is designed for Mac users who want to run this app but have **never used Xcode or written code.** Follow these simple steps to see the app in action!
+An iOS app that scans paper and PDF receipts with on-device OCR, parses them into structured line items, and tracks spending over time — built with SwiftUI, SwiftData, and Vision.
 
----
+## What it does
 
-## 🛠 Step 1: Install Xcode
-To run this app on your Mac, you need Apple's development tool called **Xcode**.
+- **Scan or import** a receipt from the camera or as a PDF (including multi-page PDFs).
+- **OCR + parse** the text into a store name, date, line items, discounts, tax, and totals — without sending anything to a server.
+- **Catch its own mistakes**: the parser cross-checks the sum of items against the receipt's printed subtotal, and flags a mismatch instead of silently saving a wrong total.
+- **Self-repair OCR misreads** on-device: when the parser's math doesn't add up, an on-device Apple Intelligence model proposes which prices landed on the wrong line (a common OCR failure mode on skewed photos). It never invents or edits a number — it only points at prices that already exist in the text — and the proposed fix is applied and locally re-verified against the printed subtotal before being trusted. If nothing it proposes balances, the user is asked to save as-is or retake the photo, rather than the app guessing.
+- **Track spending** across saved receipts: a monthly bar chart and a per-store breakdown via Swift Charts.
+- **Correct OCR by hand**: drag a misplaced price up or down onto the item it actually belongs to.
+- **Cancel a scan or an AI repair in progress**: a Cancel button stops an in-flight scan, a multi-page PDF import, or the on-device repair call (the slowest step, where cancelling matters most) — cancellation propagates through Swift Concurrency all the way into the underlying Vision request, not just the surrounding task.
 
-1. Open the **App Store** on your Mac.
-2. Search for **"Xcode"**.
-3. Click **Get** or **Install**. 
-4. Once installed, open Xcode. If it asks to install "Additional Components," click **Install**.
+## Architecture
 
----
+- **SwiftUI** throughout, **SwiftData** for persistence (`Receipt` / `ScannedItem`).
+- OCR runs on an `actor` (`ReceiptScanner`) using Vision's `VNRecognizeTextRequest`, with recognized text fragments grouped into rows by geometry (`TextGeometry`) rather than relying on Vision's own line segmentation — this is what lets the parser handle skewed/rotated photos and multi-column layouts.
+- `ReceiptParser` is pure, `nonisolated` parsing logic decoupled from both the scanner and the UI, which is what makes it independently unit-testable against canned OCR output.
+- The AI-repair path (`ReceiptRepairer` / `RowRepair`) is built behind a protocol (`ReceiptRepairing`) so the on-device model can be swapped for a fake in tests — the actual model call, the verification math, and the "ask the user" fallback are each tested in isolation.
+- Swift Concurrency (`async`/`await`, actors, `Task.detached`) for scanning and repair; `ScannerViewModel` tracks a generation counter so a stale scan result can never resurrect UI state after the user resets or starts a new scan.
 
-## 📂 Step 2: Open the Project
-1. Open the folder named `ReceiptScanner-iOS` on your computer.
-2. Open the sub-folder named `ReceiptScanner`.
-3. Double-click the file named **`ReceiptScanner.xcodeproj`** (blue blueprint icon).
+## Requirements
 
----
+- iOS 17+ (core scanning and parsing).
+- iOS 26+ on a device that supports Apple Intelligence for the AI-repair feature — on older OS versions or unsupported devices, the app falls back to asking the user to save-as-is or retake the photo.
+- Xcode 16+.
 
-## 📱 Step 3: Choose Your Device
-You have two choices: use a virtual phone on your screen, or your actual physical iPhone.
+## Testing
 
-### Option A: Virtual iPhone (Easiest)
-1. At the very top-middle of the Xcode window, click the button that says something like **"Any iOS Device"** or **"iPhone 15"**.
-2. Scroll down to **"iOS Simulators"** and pick one (e.g., **iPhone 15 Pro**).
+- Unit tests validate parsing against several real-world receipt formats (photos and multi-page PDFs from different stores), checking store identification, item/price/discount extraction, and subtotal/total math.
+- The AI-repair logic has layered tests: pure row-editing logic (no model involved), the view-model flow against a fake model, and an opt-in quality check against the real on-device model (skipped where Apple Intelligence isn't available, recorded as an expected failure rather than a hard gate since model output varies between runs).
+- Cancellation is tested against a gated fake scanner: cancelling flips scanning state off immediately, a result that arrives after cancellation is dropped rather than resurrecting state, and a new scan can start cleanly right after.
+- A scoped XCUITest accessibility audit (`performAccessibilityAudit(for: .contrast)`) covers the Scan screen's Dark Mode contrast.
+- XCUITests cover History (empty state, newest-first ordering, swipe-to-delete), receipt detail (items in receipt order), and the Spending summary (per-store totals), running against an in-memory SwiftData store seeded with synthetic data (`-ui-testing` / `-ui-testing-seeded` launch arguments) — never the user's real saved receipts.
+- Code coverage is enabled in the test plan; current measured coverage is **61.90%** of the app target.
+- Real receipt photos/PDFs used for some of the parsing tests are personal data and are gitignored rather than committed — those specific tests skip gracefully (`XCTSkip`) if the files aren't present locally, so a fresh clone's test run doesn't show spurious failures.
 
-### Option B: Your Physical iPhone
-1. **Connect your iPhone** to your Mac with a cable. 
-2. If your iPhone asks to **"Trust This Computer?"**, tap **Trust** and enter your passcode.
-3. **Set up Signing (Required for real phones):**
-   - In Xcode, on the far left, click the **blue folder icon** at the very top.
-   - Click the word **"ReceiptScanner"** at the very top of that list (it has a blue icon).
-   - In the main middle area, click the **"Signing & Capabilities"** tab.
-   - Look for **"Team"** and click **"Add Account..."**. Sign in with your Apple ID.
-   - Once signed in, select your name in the **Team** dropdown menu.
-4. **Select your phone:** Click the device button at the top-middle of Xcode and select your actual iPhone from the list.
+## Building and running
 
----
+1. Open `ReceiptScanner/ReceiptScanner.xcodeproj` in Xcode.
+2. Pick a simulator, or your own device:
+   - **Simulator**: select one from the scheme's run-destination menu and press **Run** (⌘R).
+   - **Physical device**: connect it, set your team under the target's **Signing & Capabilities** tab, select your device as the run destination, and press **Run**. The first launch will likely need you to trust the developer certificate on-device: **Settings → General → VPN & Device Management → [your certificate] → Trust**.
+3. To run the test suite: **Product → Test** (⌘U).
 
-## ▶️ Step 4: Run the App!
-1. Click the **Play button** (▶️) in the top-left corner.
-2. **If using a real iPhone:** 
-   - The first time you run it, it might say "Untrusted Developer."
-   - On your **iPhone**, go to **Settings** -> **General** -> **VPN & Device Management** (or Profiles).
-   - Tap on your Apple ID and tap **"Trust"**.
-3. The app will now launch on your device!
+## Currently in progress
 
----
-
-## ❓ Troubleshooting for Beginners
-
-### "I see red errors!"
-Go to the top menu and click **Product** -> **Clean Build Folder**, then try the **Play button** again.
-
-### "Xcode says my Bundle Identifier is not unique"
-In the same **Signing & Capabilities** tab where you picked your name, change the "Bundle Identifier" text (e.g., add a random number to the end of `com.example.ReceiptScanner`) and try again.
-
----
-
-### 🎊 Success!
-You've just launched the Receipt Scanner. Happy testing!
+- Full accessibility pass (VoiceOver labels/actions, Dynamic Type layout, Reduce Motion) — a Dark Mode contrast fix is in, the rest is not yet.

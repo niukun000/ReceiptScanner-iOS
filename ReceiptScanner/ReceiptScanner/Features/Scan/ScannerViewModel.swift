@@ -38,6 +38,8 @@ class ScannerViewModel {
 
     func reset() {
         scanGeneration += 1
+        currentTask?.cancel()
+        repairTask?.cancel()
         selectedImage = nil
         recognizedText = ""
         parsedReceipt = nil
@@ -46,6 +48,20 @@ class ScannerViewModel {
         mismatchUnresolved = false
         scannedRows = []
         hasAttemptedRepair = false
+    }
+
+    // Stops a scan or an in-progress AI repair when the user taps Cancel.
+    // Repair is the slower of the two (an on-device model call), so this
+    // covers it too, not just the OCR phase. Cancelling the task propagates
+    // into the scanner, which cancels its Vision request, and bumping the
+    // generation drops any result that still arrives afterwards.
+    func cancelScan() {
+        guard isScanning || isRepairing else { return }
+        scanGeneration += 1
+        currentTask?.cancel()
+        repairTask?.cancel()
+        isScanning = false
+        isRepairing = false
     }
 
     // Corrects OCR row misalignment: slides price/discount/confidence down or up
@@ -145,7 +161,10 @@ class ScannerViewModel {
         let generation = scanGeneration
         let rows = scannedRows
         isRepairing = true
-        defer { isRepairing = false }
+        // Only clear isRepairing for this same attempt — if cancelScan()/reset()
+        // already bumped the generation (and so already cleared it), a newer
+        // scan's repair may be the one now in flight and must not be touched.
+        defer { if generation == scanGeneration { isRepairing = false } }
 
         var repaired: (parsed: ParsedReceipt, rows: [TextRow])?
         if !rows.isEmpty, let moves = try? await repairer.proposeMoves(lines: rows.map(\.text), subtotal: subtotal) {
@@ -188,6 +207,10 @@ class ScannerViewModel {
             var firstPageImage: UIImage?
 
             for i in 0..<pdfDocument.pageCount {
+                // Checked before each page: rendering and OCR are the slow
+                // part, so a cancelled multi-page import stops right away.
+                // cancelScan()/reset() have already updated the UI.
+                if Task.isCancelled { return }
                 guard let page = pdfDocument.page(at: i) else { continue }
                 // pageRef is Optional: pages without a backing CGPDFPage exist
                 // (corrupt or non-CGPDF-backed pages) and must not crash the import.
@@ -231,7 +254,8 @@ class ScannerViewModel {
                         tableItemsPerPage.append(tableItems)
                     }
                 } catch {
-                    print("Error scanning page \(i): \(error)")
+                    // Best-effort: skip pages Vision couldn't OCR rather than
+                    // failing the whole multi-page import.
                 }
             }
 
@@ -241,12 +265,15 @@ class ScannerViewModel {
                 ? tableItemsPerPage.flatMap { $0 }
                 : nil
 
+            if Task.isCancelled { return }
             let parsed = ReceiptParser.parse(rawText: combinedText, rows: combinedRows, tableItems: combinedTableItems)
             let rows = combinedRows
+            let text = combinedText
+            let image = firstPageImage
             await MainActor.run {
                 guard generation == self.scanGeneration else { return }
-                self.selectedImage = firstPageImage // Use first page as preview
-                self.recognizedText = combinedText
+                self.selectedImage = image // Use first page as preview
+                self.recognizedText = text
                 self.scannedRows = rows
                 self.parsedReceipt = parsed
                 self.isScanning = false
@@ -267,8 +294,11 @@ class ScannerViewModel {
 
         currentTask = Task.detached(priority: .userInitiated) {
             let resized = ImageUtils.resizeImage(image)
+            // Cancelled while resizing: skip OCR entirely.
+            if Task.isCancelled { return }
             do {
                 let result = try await scanner.scan(image: resized)
+                try Task.checkCancellation()
                 let parsed = ReceiptParser.parse(rawText: result.rawText, rows: result.rows, tableItems: result.tableItems)
                 await MainActor.run {
                     guard generation == self.scanGeneration else { return }
@@ -280,6 +310,11 @@ class ScannerViewModel {
                     if parsed.validationWarning != nil { self.repairTask = Task { await self.attemptAIRepair() } }
                 }
             } catch {
+                // A cancelled scan isn't a failure: cancelScan()/reset() have
+                // already updated the UI, so don't show a "Scan Failed" alert.
+                // Vision reports its own cancellation error, so check the task
+                // too, not just CancellationError.
+                if Task.isCancelled || error is CancellationError { return }
                 await MainActor.run {
                     guard generation == self.scanGeneration else { return }
                     self.errorMessage = error.localizedDescription

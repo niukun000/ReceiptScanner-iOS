@@ -8,13 +8,28 @@ import FoundationModels
 actor FakeReceiptRepairer: ReceiptRepairing {
     private let result: Result<[PriceMove], Error>
     private(set) var callCount = 0
+    private var gate: CheckedContinuation<Void, Never>?
+    private var isGated: Bool
 
-    init(moves: [PriceMove]) { result = .success(moves) }
-    init(error: Error) { result = .failure(error) }
+    init(moves: [PriceMove], gated: Bool = false) {
+        result = .success(moves)
+        isGated = gated
+    }
+    init(error: Error) { result = .failure(error); isGated = false }
 
     func proposeMoves(lines: [String], subtotal: Double) async throws -> [PriceMove] {
         callCount += 1
+        if isGated {
+            await withCheckedContinuation { continuation in self.gate = continuation }
+        }
         return try result.get()
+    }
+
+    /// Unblocks a pending `proposeMoves` call started while `gated: true`.
+    func release() {
+        isGated = false
+        gate?.resume()
+        gate = nil
     }
 }
 
@@ -207,6 +222,26 @@ final class ReceiptRepairTests: XCTestCase {
         XCTAssertNil(viewModel.repairTask)
         let calls = await repairer.callCount
         XCTAssertEqual(calls, 0)
+    }
+
+    func testCancelDuringRepairStopsItAndDropsTheResult() async throws {
+        let repairer = FakeReceiptRepairer(moves: shiftFix, gated: true)
+        let viewModel = makeViewModel(rows: shiftedRows, repairer: repairer)
+
+        viewModel.processImage(makeImage())
+        await viewModel.currentTask?.value
+        XCTAssertTrue(viewModel.isRepairing, "Repair should be in flight once the scan finishes with a mismatch.")
+
+        viewModel.cancelScan()
+        XCTAssertFalse(viewModel.isRepairing, "Cancel should clear isRepairing immediately, not wait for the model call to return.")
+
+        await repairer.release()
+        await viewModel.repairTask?.value
+
+        XCTAssertFalse(viewModel.isRepairing)
+        XCTAssertFalse(viewModel.mismatchUnresolved, "A cancelled repair isn't the same as the model failing to find a fix.")
+        let parsed = try XCTUnwrap(viewModel.parsedReceipt)
+        XCTAssertFalse(parsed.wasAIRepaired, "The late-arriving repair must not apply after cancellation.")
     }
 
     // MARK: - Layer 3: real on-device model (opt-in quality check)

@@ -24,9 +24,39 @@ nonisolated protocol ReceiptScanning: Sendable {
     func scan(image: UIImage) async throws -> ReceiptScanResult
 }
 
+/// Lets a task's cancellation handler stop a Vision request that may still be
+/// running on a background queue. `cancel()` can arrive before the request
+/// exists (the task was already cancelled) or while Vision is mid-recognition,
+/// so both orders are handled under a lock.
+nonisolated final class VisionRequestCanceller: @unchecked Sendable {
+    private let lock = NSLock()
+    private var request: VNRequest?
+    private var isCancelled = false
+
+    func attach(_ request: VNRequest) {
+        lock.lock()
+        defer { lock.unlock() }
+        if isCancelled {
+            request.cancel()
+        } else {
+            self.request = request
+        }
+    }
+
+    func cancel() {
+        lock.lock()
+        defer { lock.unlock() }
+        isCancelled = true
+        request?.cancel()
+    }
+}
+
 actor ReceiptScanner: ReceiptScanning {
 
     func scan(image: UIImage) async throws -> ReceiptScanResult {
+        // Don't start OCR for a scan the user already cancelled.
+        try Task.checkCancellation()
+
         let cgOrientation = await MainActor.run {
             CGImagePropertyOrientation(image.imageOrientation)
         }
@@ -149,39 +179,48 @@ actor ReceiptScanner: ReceiptScanning {
             }
         }
         let once = ResumeOnce()
+        let canceller = VisionRequestCanceller()
 
-        return try await withCheckedThrowingContinuation { continuation in
-            let request = VNRecognizeTextRequest { request, error in
-                guard once.claim() else { return }
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let observations = request.results as? [VNRecognizedTextObservation] else {
-                    continuation.resume(returning: ("", []))
-                    return
-                }
-
-                let fragments = observations.map { TextFragment(obs: $0) }
-                let rows = TextGeometry.groupIntoRows(fragments)
-                let rawText = rows.map(\.text).joined(separator: "\n")
-                continuation.resume(returning: (rawText, rows))
-            }
-
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
-
-            let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation, options: [:])
-
-            DispatchQueue.global(qos: .userInitiated).async {
-                do {
-                    try handler.perform([request])
-                } catch {
+        // If the scan's task is cancelled, cancel the Vision request too.
+        // Vision then finishes the request with a cancellation error, which
+        // goes through the same claim-once gate as any other result.
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let request = VNRecognizeTextRequest { request, error in
                     guard once.claim() else { return }
-                    continuation.resume(throwing: error)
+                    if let error = error {
+                        continuation.resume(throwing: error)
+                        return
+                    }
+
+                    guard let observations = request.results as? [VNRecognizedTextObservation] else {
+                        continuation.resume(returning: ("", []))
+                        return
+                    }
+
+                    let fragments = observations.map { TextFragment(obs: $0) }
+                    let rows = TextGeometry.groupIntoRows(fragments)
+                    let rawText = rows.map(\.text).joined(separator: "\n")
+                    continuation.resume(returning: (rawText, rows))
+                }
+
+                request.recognitionLevel = .accurate
+                request.usesLanguageCorrection = true
+                canceller.attach(request)
+
+                let handler = VNImageRequestHandler(cgImage: cgImage, orientation: cgOrientation, options: [:])
+
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do {
+                        try handler.perform([request])
+                    } catch {
+                        guard once.claim() else { return }
+                        continuation.resume(throwing: error)
+                    }
                 }
             }
+        } onCancel: {
+            canceller.cancel()
         }
     }
 }

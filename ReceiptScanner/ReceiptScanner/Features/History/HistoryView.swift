@@ -27,6 +27,7 @@ struct HistoryView: View {
             NavigationLink(destination: SpendingSummaryView()) {
                 Label("Spending", systemImage: "chart.bar")
             }
+            .accessibilityIdentifier("spendingButton")
         }
         .overlay {
             if receipts.isEmpty {

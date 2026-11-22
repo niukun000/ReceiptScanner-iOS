@@ -121,6 +121,72 @@ final class ScannerViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.isScanning)
     }
 
+    func testCancelScanStopsScanningAndCancelsTheScanner() async throws {
+        let fakeScanner = FakeReceiptScanner(outcome: .success(ReceiptScanResult(rawText: "should not publish", rows: [], tableItems: nil)), gated: true)
+        let viewModel = ScannerViewModel(scanner: fakeScanner)
+
+        viewModel.processImage(makeImage())
+        XCTAssertTrue(viewModel.isScanning)
+        let cancelledTask = viewModel.currentTask
+
+        viewModel.cancelScan()
+        XCTAssertFalse(viewModel.isScanning, "Cancel should flip isScanning off immediately, not wait for the task to unwind")
+
+        // The fake only unblocks when released; releasing it now simulates the
+        // cancelled scan finishing anyway (e.g. Vision had already queued a
+        // result) — it must not resurrect state after cancellation.
+        await fakeScanner.release()
+        await cancelledTask?.value
+
+        XCTAssertNil(viewModel.parsedReceipt)
+        XCTAssertEqual(viewModel.recognizedText, "")
+        XCTAssertNil(viewModel.errorMessage, "Cancelling isn't a failure — no error should surface")
+    }
+
+    func testCancelScanDoesNothingWhenNotScanning() {
+        let viewModel = ScannerViewModel(scanner: FakeReceiptScanner(outcome: .success(ReceiptScanResult(rawText: "", rows: [], tableItems: nil))))
+
+        viewModel.cancelScan()
+
+        XCTAssertFalse(viewModel.isScanning)
+        XCTAssertNil(viewModel.errorMessage)
+    }
+
+    func testCanScanAgainAfterCancelling() async throws {
+        // Gated only for the first call — release() clears the gate for good,
+        // so the second processImage() below returns immediately.
+        let fakeScanner = FakeReceiptScanner(outcome: .success(ReceiptScanResult(rawText: "second", rows: [], tableItems: nil)), gated: true)
+        let viewModel = ScannerViewModel(scanner: fakeScanner)
+
+        viewModel.processImage(makeImage())
+        viewModel.cancelScan()
+        await fakeScanner.release()
+        await viewModel.currentTask?.value
+
+        viewModel.processImage(makeImage())
+        await viewModel.currentTask?.value
+
+        XCTAssertFalse(viewModel.isScanning)
+        XCTAssertEqual(viewModel.recognizedText, "second")
+    }
+
+    func testResetCancelsTheInFlightScan() async throws {
+        let fakeScanner = FakeReceiptScanner(outcome: .success(ReceiptScanResult(rawText: "stale", rows: [], tableItems: nil)), gated: true)
+        let viewModel = ScannerViewModel(scanner: fakeScanner)
+
+        viewModel.processImage(makeImage())
+        let staleTask = viewModel.currentTask
+
+        viewModel.reset()
+        XCTAssertFalse(viewModel.isScanning)
+
+        await fakeScanner.release()
+        await staleTask?.value
+
+        XCTAssertNil(viewModel.parsedReceipt)
+        XCTAssertEqual(viewModel.recognizedText, "")
+    }
+
     func testShiftPriceDownRecomputesSynthesizedTotals() {
         let items = [
             ReceiptItemData(itemNumber: nil, name: "A", price: 1.00),
