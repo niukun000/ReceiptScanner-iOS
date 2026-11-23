@@ -29,6 +29,18 @@ struct ParsedReceipt {
 // Pure parsing logic with no UI/shared state — nonisolated so it can run on
 // the detached background tasks that perform OCR, matching ReceiptScanning.
 nonisolated struct ReceiptParser {
+    // NSDataDetector/NSRegularExpression are expensive to compile — cached once
+    // here instead of being rebuilt on every call (extractDate runs once per
+    // receipt, matchPriceFragment runs once per OCR fragment).
+    private static let dateDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+    private static let priceFragmentRegex = try? NSRegularExpression(pattern: #"^(-?\d{1,4}[.,]\d{2}-?)\s*[A-Z\*]{0,3}$"#)
+    private static let priceLikeTokenRegex = try? NSRegularExpression(pattern: #"\d{1,4}[.,]\d{2}"#)
+    private static let keywordPriceRegex = try? NSRegularExpression(pattern: #"(\d+[\.,\s]\d{2})"#)
+    private static let costcoBarePriceRegex = try? NSRegularExpression(pattern: #"^([\d\.,]+[\.,]\d{2}-?)\s*[A-Z\*]*$"#)
+    private static let costcoPriceRegex = try? NSRegularExpression(pattern: #"(.*?)\s+([\d\.,]+[\.,]\d{2}-?)\s*([A-Z\*]*)$"#)
+    private static let costcoSkuRegex = try? NSRegularExpression(pattern: #"^(\d{3,8})"#)
+    private static let genericPriceRegex = try? NSRegularExpression(pattern: #"(.*?)\s+(\d+\.\d{2})$"#)
+
     static func parse(rawText: String, rows: [TextRow], tableItems: [ReceiptItemData]? = nil) -> ParsedReceipt {
         let store = identifyStore(rawText: rawText)
         let date = extractDate(rawText: rawText)
@@ -255,8 +267,7 @@ nonisolated struct ReceiptParser {
     /// "22.99", "2.00-", "-2.00", "22.99 GP"). Returns the parsed value, or
     /// nil if the fragment isn't price-shaped at all.
     private static func matchPriceFragment(_ text: String) -> Double? {
-        guard let regex = try? NSRegularExpression(pattern: #"^(-?\d{1,4}[.,]\d{2}-?)\s*[A-Z\*]{0,3}$"#),
-              let result = regex.firstMatch(in: text, range: NSRange(location: 0, length: text.utf16.count)) else {
+        guard let result = priceFragmentRegex?.firstMatch(in: text, range: NSRange(location: 0, length: text.utf16.count)) else {
             return nil
         }
         let priceStr = (text as NSString).substring(with: result.range(at: 1))
@@ -268,8 +279,7 @@ nonisolated struct ReceiptParser {
     /// (a genuinely short receipt) or a sign the classifier failed and the
     /// regex-based fallback parser should run instead.
     private static func countPriceLikeTokens(in rawText: String) -> Int {
-        guard let regex = try? NSRegularExpression(pattern: #"\d{1,4}[.,]\d{2}"#) else { return 0 }
-        return regex.numberOfMatches(in: rawText, range: NSRange(location: 0, length: rawText.utf16.count))
+        priceLikeTokenRegex?.numberOfMatches(in: rawText, range: NSRange(location: 0, length: rawText.utf16.count)) ?? 0
     }
 
     // OCR sometimes splits an item's name and price onto separate raw-text lines,
@@ -344,8 +354,7 @@ nonisolated struct ReceiptParser {
     }
 
     private static func extractDate(rawText: String) -> Date? {
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
-        return detector?.matches(in: rawText, options: [], range: NSRange(location: 0, length: rawText.utf16.count)).first?.date
+        dateDetector?.matches(in: rawText, options: [], range: NSRange(location: 0, length: rawText.utf16.count)).first?.date
     }
 
     private static func extractKeywordValue(rawText: String, keyword: String) -> Double? {
@@ -391,18 +400,14 @@ nonisolated struct ReceiptParser {
 
     private static func findPriceInString(_ str: String) -> Double? {
         // Look for prices like 86.93 or 86,93 or even 86 93 (if space is misread)
-        let pricePattern = #"(\d+[\.,\s]\d{2})"#
-        if let regex = try? NSRegularExpression(pattern: pricePattern) {
-            let range = NSRange(location: 0, length: str.utf16.count)
-            let matches = regex.matches(in: str, options: [], range: range)
-            if let lastMatch = matches.last {
-                var pStr = (str as NSString).substring(with: lastMatch.range)
-                pStr = pStr.replacingOccurrences(of: ",", with: ".")
-                pStr = pStr.replacingOccurrences(of: " ", with: ".")
-                return Double(pStr)
-            }
+        let range = NSRange(location: 0, length: str.utf16.count)
+        guard let lastMatch = keywordPriceRegex?.matches(in: str, options: [], range: range).last else {
+            return nil
         }
-        return nil
+        var pStr = (str as NSString).substring(with: lastMatch.range)
+        pStr = pStr.replacingOccurrences(of: ",", with: ".")
+        pStr = pStr.replacingOccurrences(of: " ", with: ".")
+        return Double(pStr)
     }
 
     // MARK: - Regex-based fallback parsers (safety net when the row classifier
@@ -412,9 +417,6 @@ nonisolated struct ReceiptParser {
         var items: [ReceiptItemData] = []
 
         let lines = rawText.components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
-        // Stricter price regex: requires a decimal point to avoid matching member numbers
-        let priceRegex = #"(.*?)\s+([\d\.,]+[\.,]\d{2}-?)\s*([A-Z\*]*)$"#
-        let skuRegex = #"^(\d{3,8})"#
 
         for line in lines {
             if line.isEmpty { continue }
@@ -440,8 +442,9 @@ nonisolated struct ReceiptParser {
             // whitespace before the price. Surface it as a low-confidence placeholder
             // instead of silently dropping the row (or, worse, misreading the price
             // text itself as an item name because nothing else matched).
-            if let bareRegex = try? NSRegularExpression(pattern: #"^([\d\.,]+[\.,]\d{2}-?)\s*[A-Z\*]*$"#),
-               let bareResult = bareRegex.firstMatch(in: line, options: [], range: NSRange(location: 0, length: line.utf16.count)) {
+            let lineRange = NSRange(location: 0, length: line.utf16.count)
+
+            if let bareResult = costcoBarePriceRegex?.firstMatch(in: line, options: [], range: lineRange) {
                 var priceStr = (line as NSString).substring(with: bareResult.range(at: 1)).replacingOccurrences(of: ",", with: ".")
                 let isNegative = priceStr.hasSuffix("-")
                 if isNegative { priceStr = String(priceStr.dropLast()) }
@@ -451,33 +454,27 @@ nonisolated struct ReceiptParser {
                 continue
             }
 
-            if let pMatch = line.range(of: priceRegex, options: .regularExpression) {
-                let matchStr = String(line[pMatch])
-                if let regex = try? NSRegularExpression(pattern: priceRegex) {
-                    let nsRange = NSRange(location: 0, length: matchStr.utf16.count)
-                    if let result = regex.firstMatch(in: matchStr, options: [], range: nsRange) {
-                        let namePart = (matchStr as NSString).substring(with: result.range(at: 1))
-                        var priceStr = (matchStr as NSString).substring(with: result.range(at: 2))
+            if let result = costcoPriceRegex?.firstMatch(in: line, options: [], range: lineRange) {
+                let namePart = (line as NSString).substring(with: result.range(at: 1))
+                var priceStr = (line as NSString).substring(with: result.range(at: 2))
 
-                        // Handle comma as decimal separator if present
-                        priceStr = priceStr.replacingOccurrences(of: ",", with: ".")
+                // Handle comma as decimal separator if present
+                priceStr = priceStr.replacingOccurrences(of: ",", with: ".")
 
-                        let isNegative = priceStr.hasSuffix("-")
-                        if isNegative { priceStr = String(priceStr.dropLast()) }
+                let isNegative = priceStr.hasSuffix("-")
+                if isNegative { priceStr = String(priceStr.dropLast()) }
 
-                        guard let price = Double(priceStr) else { continue }
-                        let currentPrice = isNegative ? -price : price
+                guard let price = Double(priceStr) else { continue }
+                let currentPrice = isNegative ? -price : price
 
-                        var sku: String? = nil
-                        var finalName = namePart
-                        if let sMatch = finalName.range(of: skuRegex, options: .regularExpression) {
-                            sku = String(finalName[sMatch])
-                            finalName = String(finalName[sMatch.upperBound...]).trimmingCharacters(in: .whitespaces)
-                        }
-
-                        items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: currentPrice))
-                    }
+                var sku: String? = nil
+                var finalName = namePart
+                if let skuResult = costcoSkuRegex?.firstMatch(in: finalName, range: NSRange(location: 0, length: finalName.utf16.count)) {
+                    sku = (finalName as NSString).substring(with: skuResult.range)
+                    finalName = (finalName as NSString).substring(from: skuResult.range.location + skuResult.range.length).trimmingCharacters(in: .whitespaces)
                 }
+
+                items.append(ReceiptItemData(itemNumber: sku, name: finalName, price: currentPrice))
                 continue
             }
 
@@ -494,22 +491,19 @@ nonisolated struct ReceiptParser {
 
     private static func parseGenericItems(rawText: String) -> [ReceiptItemData] {
         var items: [ReceiptItemData] = []
-        let priceRegex = #"(.*?)\s+(\d+\.\d{2})$"#
 
         for line in rawText.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.isEmpty { continue }
 
-            if let regex = try? NSRegularExpression(pattern: priceRegex) {
-                let nsRange = NSRange(location: 0, length: trimmed.utf16.count)
-                if let result = regex.firstMatch(in: trimmed, options: [], range: nsRange) {
-                    let name = (trimmed as NSString).substring(with: result.range(at: 1))
-                    let priceStr = (trimmed as NSString).substring(with: result.range(at: 2))
+            let nsRange = NSRange(location: 0, length: trimmed.utf16.count)
+            if let result = genericPriceRegex?.firstMatch(in: trimmed, options: [], range: nsRange) {
+                let name = (trimmed as NSString).substring(with: result.range(at: 1))
+                let priceStr = (trimmed as NSString).substring(with: result.range(at: 2))
 
-                    if !["TOTAL", "SUBTOTAL", "TAX"].contains(where: { name.uppercased().contains($0) }) {
-                        if let price = Double(priceStr) {
-                            items.append(ReceiptItemData(itemNumber: nil, name: name, price: price))
-                        }
+                if !["TOTAL", "SUBTOTAL", "TAX"].contains(where: { name.uppercased().contains($0) }) {
+                    if let price = Double(priceStr) {
+                        items.append(ReceiptItemData(itemNumber: nil, name: name, price: price))
                     }
                 }
             }

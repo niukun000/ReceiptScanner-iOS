@@ -59,10 +59,12 @@ enum ReceiptRepairer {
             You fix OCR line-alignment mistakes on store receipts. OCR sometimes puts an \
             item's price on a neighboring line: onto a header line such as the member \
             number, onto the next item's line, or onto a line of its own. When that \
-            happens, every later item can end up one line off. Each item line should end \
-            with exactly one price. Report which prices must move to which line so every \
-            item line gets its own price. Only move prices that already appear in the \
-            text; never invent, change, or recalculate a number.
+            happens, every later item can end up one line off. The shift can continue \
+            through the SUBTOTAL, TAX, and TOTAL rows, so a value currently beside one \
+            of those labels may actually belong to the next summary row. Each item and \
+            summary line should end with its own value. Report every move needed to align \
+            the whole block. Only move values that already appear in the text; never \
+            invent, change, or recalculate a number.
             """)
 
         let numbered = lines.enumerated().map { "\($0.offset): \($0.element)" }.joined(separator: "\n")
@@ -70,8 +72,10 @@ enum ReceiptRepairer {
             Receipt lines (line number: text):
             \(numbered)
 
-            The items should add up to the printed subtotal of \(String(format: "%.2f", subtotal)), \
-            but they don't. Which prices are on the wrong line, and which line does each belong on?
+            The value currently parsed as subtotal is \(String(format: "%.2f", subtotal)), \
+            but the receipt does not balance and that value may itself be shifted from a \
+            neighboring TAX row. Which values are on the wrong line, and which line does \
+            each belong on?
             """
 
         let response = try await session.respond(to: prompt, generating: GeneratedRepairPlan.self)
@@ -87,12 +91,62 @@ enum RowRepair {
         guard let edited = apply(moves, to: rows) else { return nil }
         let rawText = edited.map(\.text).joined(separator: "\n")
         var parsed = ReceiptParser.parse(rawText: rawText, rows: edited)
-        // A move onto the SUBTOTAL line would change the number we validate
-        // against, so the printed subtotal must come through untouched.
         guard parsed.validationWarning == nil, !parsed.subtotalIsSynthesized,
-              let subtotal = parsed.subtotal, abs(subtotal - expectedSubtotal) < 0.005 else { return nil }
+              let subtotal = parsed.subtotal else { return nil }
+
+        let subtotalIsUnchanged = abs(subtotal - expectedSubtotal) < 0.005
+        let correctedSummaryBalances: Bool
+        if !parsed.totalIsSynthesized, let tax = parsed.tax, let total = parsed.total {
+            correctedSummaryBalances = subtotal > 0 && tax >= 0 &&
+                abs(subtotal + tax - total) < 0.005 &&
+                isContiguousSummaryShift(moves: moves, originalRows: rows, editedRows: edited)
+        } else {
+            correctedSummaryBalances = false
+        }
+        // A changed subtotal is accepted only for the narrow OCR failure where
+        // one contiguous block shifted down by exactly one row through
+        // SUBTOTAL, TAX, and TOTAL, and the corrected arithmetic balances.
+        guard subtotalIsUnchanged || correctedSummaryBalances else { return nil }
         parsed.wasAIRepaired = true
         return (parsed, edited)
+    }
+
+    private static func isContiguousSummaryShift(
+        moves: [PriceMove],
+        originalRows: [TextRow],
+        editedRows: [TextRow]
+    ) -> Bool {
+        func rowIndex(containing keyword: String, excluding excluded: String? = nil) -> Int? {
+            originalRows.indices.first { index in
+                let text = originalRows[index].text.uppercased()
+                return text.contains(keyword) && excluded.map { !text.contains($0) } != false
+            }
+        }
+
+        guard let subtotalIndex = rowIndex(containing: "SUBTOTAL"),
+              let taxIndex = rowIndex(containing: "TAX"),
+              let totalIndex = rowIndex(containing: "TOTAL", excluding: "SUBTOTAL"),
+              taxIndex == subtotalIndex + 1,
+              totalIndex == taxIndex + 1,
+              let firstSource = moves.map(\.fromLine).min(),
+              firstSource < subtotalIndex else { return false }
+
+        // The only accepted shape is one move per edge in a gapless chain:
+        // start -> start+1 -> ... -> SUBTOTAL -> TAX -> TOTAL.
+        guard moves.count == totalIndex - firstSource else { return false }
+        let edges = Set(moves.map { "\($0.fromLine):\($0.toLine)" })
+        for source in firstSource..<totalIndex {
+            guard edges.contains("\(source):\(source + 1)") else { return false }
+        }
+
+        // After the atomic shift, every destination in the repaired block must
+        // contain exactly one price-like fragment. This rejects duplicate or
+        // partial placements even when the final arithmetic happens to match.
+        for index in (firstSource + 1)...totalIndex {
+            let priceCount = editedRows[index].fragments.count { priceValue($0.text) != nil }
+            guard priceCount == 1 else { return false }
+        }
+        return true
     }
 
     static func apply(_ moves: [PriceMove], to rows: [TextRow]) -> [TextRow]? {

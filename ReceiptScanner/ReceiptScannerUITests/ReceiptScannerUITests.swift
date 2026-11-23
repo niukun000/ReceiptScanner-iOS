@@ -36,6 +36,36 @@ final class ReceiptScannerUITests: XCTestCase {
         try app.performAccessibilityAudit(for: .contrast)
     }
 
+    /// Drives the full scan-review-save flow without a camera or the system
+    /// file picker: "Feed Test PDF" (DEBUG-only, gated by -ui-testing) feeds
+    /// the checked-in Costco receipt through the real OCR and parsing
+    /// pipeline, so this exercises the actual review screen and save flow,
+    /// not canned data.
+    @MainActor
+    func testFeedingAPDFThroughToSavingInHistory() throws {
+        let app = launchApp(seeded: false)
+
+        let feedButton = app.buttons["feedTestPDFButton"]
+        XCTAssertTrue(feedButton.waitForExistence(timeout: 5))
+        feedButton.tap()
+
+        // Real Vision OCR runs on the rendered PDF page, so give it room.
+        // The Total row (Review section) is visible without scrolling once
+        // processing finishes — check that first as a readiness signal.
+        XCTAssertTrue(element(containing: "160.03", in: app).waitForExistence(timeout: 15))
+
+        // The parsed total verifies that the real fixture went through OCR
+        // and parsing. Item-level parsing is covered by the fixture's unit
+        // test; keeping this UI test on the visible Review section avoids
+        // brittle scrolling through the long raw-text row.
+        let saveButton = app.buttons["Save to History"]
+        XCTAssertTrue(saveButton.exists)
+        saveButton.tap()
+
+        openTab("History", in: app)
+        XCTAssertTrue(element(containing: "160.03", in: app).waitForExistence(timeout: 5))
+    }
+
     // MARK: - History
 
     @MainActor

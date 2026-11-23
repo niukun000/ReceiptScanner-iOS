@@ -85,7 +85,25 @@ struct ScanView: View {
                     viewModel.errorMessage = error.localizedDescription
                 }
             }
-            
+
+            #if DEBUG
+            // Test-only seam: lets a UI test drive the scan review/save flow
+            // through real OCR and parsing, without a real camera or the
+            // system file picker — both of which XCUITest can't reliably
+            // drive. #if DEBUG keeps this out of release builds entirely;
+            // the launch-argument check is a second, independent gate.
+            if ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+                Button("Feed Test PDF") {
+                    if let data = UITestFixtures.sampleReceiptPDFData() {
+                        viewModel.processPDF(data: data)
+                    } else {
+                        viewModel.errorMessage = "The UI test PDF fixture is missing."
+                    }
+                }
+                .accessibilityIdentifier("feedTestPDFButton")
+            }
+            #endif
+
             if viewModel.isScanning {
                 VStack(spacing: 12) {
                     ProgressView("Analyzing...")

@@ -121,6 +121,31 @@ final class ReceiptRepairTests: XCTestCase {
         XCTAssertEqual(before, after)
     }
 
+    /// A fabricated OCR failure shaped so the parser fixes it *without* the
+    /// model: the skipped MEMBER line sits immediately before MILK's
+    /// price-less line, so the parser's own adjacent-row cascade
+    /// (`mergeSplitNamePriceRows`, maxGap = 1) bridges them on its own — the
+    /// mismatch never has a chance to surface. The item still comes back
+    /// flagged low-confidence, since it was reconstructed by a heuristic
+    /// rather than read cleanly off its own line.
+    func testAdjacentMisplacedPriceIsFixedByParserAlone() {
+        let rows = [
+            row("GREENGROCER"),
+            row("MEMBER", "#4821", "4.29"), // MILK's price, on the wrong line
+            row("111", "MILK 2L"),          // price missing — right next to MEMBER
+            row("222", "BREAD WHEAT", "3.49"),
+            row("333", "EGGS DOZEN", "5.99"),
+            row("SUBTOTAL", "13.77"),
+        ]
+
+        let parsed = parse(rows)
+
+        XCTAssertNil(parsed.validationWarning, "Adjacent placeholders should self-repair without the model ever being asked.")
+        XCTAssertEqual(price(of: "MILK", in: parsed), 4.29)
+        XCTAssertEqual(price(of: "BREAD", in: parsed), 3.49)
+        XCTAssertEqual(price(of: "EGGS", in: parsed), 5.99)
+    }
+
     /// The YU CHOY case on real OCR output: IMG_8410 parses correctly today,
     /// so break it by moving YU CHOY's price (which OCR puts on the Member line)
     /// onto the BLUEBERRIES line instead, then check one move repairs it.
@@ -173,6 +198,181 @@ final class ReceiptRepairTests: XCTestCase {
         XCTAssertFalse(viewModel.mismatchUnresolved)
         let calls = await repairer.callCount
         XCTAssertEqual(calls, 1)
+    }
+
+    /// A readable, end-to-end walkthrough of the whole repair story with a
+    /// fabricated (not real-photo) receipt, for demoing the feature: OCR
+    /// grouped MILK's price onto the neighboring MEMBER line instead of its
+    /// own — the exact failure mode the real IMG_8410 fixture hits — so the
+    /// parser's own math fails first, then the model's proposed move fixes
+    /// it, kept only because the result actually balances.
+    func testParserFailsThenModelRepairsAMisplacedPrice() async throws {
+        let rows = [
+            row("GREENGROCER"),
+            row("111", "MILK 2L"),               // price missing — OCR lost it
+            row("222", "BREAD WHEAT", "3.49"),
+            row("333", "EGGS DOZEN", "5.99"),
+            row("MEMBER", "#4821", "4.29"),      // MILK's price, on the wrong line
+            row("SUBTOTAL", "13.77"),
+        ]
+
+        // 1. The deterministic parser fails on its own. MEMBER sits three
+        // rows from MILK, past the parser's own adjacent-row cascade
+        // (maxGap = 1 — see testAdjacentMisplacedPriceIsFixedByParserAlone
+        // for the case where it's close enough to self-repair), and the
+        // parser already drops "MEMBER" lines as store/account info, so
+        // that 4.29 isn't just misattributed — it's invisible to the item sum.
+        let broken = parse(rows)
+        XCTAssertNotNil(broken.validationWarning, "Item sum ($9.48: BREAD + EGGS, MILK missing) shouldn't match the printed subtotal ($13.77).")
+        XCTAssertNil(price(of: "MILK", in: broken), "MILK should have no price — it was misread onto the MEMBER line.")
+
+        // 2. The model engages: told the subtotal doesn't match, it reports
+        // that the price on the MEMBER line belongs on MILK's line instead.
+        let repairer = FakeReceiptRepairer(moves: [PriceMove(fromLine: 4, toLine: 1, price: "4.29")])
+        let viewModel = makeViewModel(rows: rows, repairer: repairer)
+
+        viewModel.processImage(makeImage())
+        await viewModel.currentTask?.value
+        await viewModel.repairTask?.value
+
+        // 3. The move is applied to the original OCR fragments and
+        // re-parsed from scratch; it's kept only because that result
+        // actually balances against the printed subtotal.
+        let fixed = try XCTUnwrap(viewModel.parsedReceipt)
+        XCTAssertNil(fixed.validationWarning)
+        XCTAssertTrue(fixed.wasAIRepaired)
+        XCTAssertEqual(price(of: "MILK", in: fixed), 4.29)
+        XCTAssertEqual(price(of: "BREAD", in: fixed), 3.49)
+        XCTAssertEqual(price(of: "EGGS", in: fixed), 5.99)
+        let calls = await repairer.callCount
+        XCTAssertEqual(calls, 1, "The fix must actually come from the model being asked, not some other path.")
+    }
+
+    /// A harder variant of the same receipt: each item's line shows the next
+    /// item's price, while EGGS is left empty — a three-hop chain, not a
+    /// single swap. The model has to propose every move; a partial fix would
+    /// not balance and must be rejected.
+    func testNonAdjacentShiftDropsAnItemUntilModelProposesAChain() async throws {
+        let rows = [
+            row("GREENGROCER"),
+            row("MEMBER", "#4821", "4.29"), // MILK's real price, stranded here
+            row("111", "MILK 2L", "3.49"),  // showing BREAD's price instead
+            row("222", "BREAD WHEAT", "5.99"), // showing EGGS' price instead
+            row("333", "EGGS DOZEN"),           // price missing entirely
+            row("SUBTOTAL", "13.77"),
+        ]
+
+        // 1. MILK and BREAD survive with shifted prices, while the empty EGGS
+        // row is dropped. Their $9.48 sum does not match the $13.77 subtotal.
+        let broken = parse(rows)
+        XCTAssertNotNil(broken.validationWarning)
+        XCTAssertEqual(price(of: "MILK", in: broken), 3.49)
+        XCTAssertEqual(price(of: "BREAD", in: broken), 5.99)
+        XCTAssertNil(price(of: "EGGS", in: broken), "EGGS should be absent because its row has no price.")
+        XCTAssertEqual(broken.items.count, 2, "Only MILK and BREAD survive the parser's own pass.")
+
+        // 2. The model has to report the whole three-hop chain for the repair
+        // to balance.
+        let repairer = FakeReceiptRepairer(moves: [
+            PriceMove(fromLine: 3, toLine: 4, price: "5.99"), // BREAD's line -> EGGS' line
+            PriceMove(fromLine: 2, toLine: 3, price: "3.49"), // MILK's line -> BREAD's line
+            PriceMove(fromLine: 1, toLine: 2, price: "4.29"), // MEMBER's line -> MILK's line
+        ])
+        let viewModel = makeViewModel(rows: rows, repairer: repairer)
+
+        viewModel.processImage(makeImage())
+        await viewModel.currentTask?.value
+        await viewModel.repairTask?.value
+
+        let fixed = try XCTUnwrap(viewModel.parsedReceipt)
+        XCTAssertNil(fixed.validationWarning)
+        XCTAssertTrue(fixed.wasAIRepaired)
+        XCTAssertEqual(price(of: "MILK", in: fixed), 4.29)
+        XCTAssertEqual(price(of: "BREAD", in: fixed), 3.49)
+        XCTAssertEqual(price(of: "EGGS", in: fixed), 5.99)
+        let calls = await repairer.callCount
+        XCTAssertEqual(calls, 1, "The fix must actually come from the model being asked, not some other path.")
+    }
+
+    /// The OCR shift continues through the summary rows. The model proposes
+    /// one atomic chain, and deterministic item/subtotal/tax/total arithmetic
+    /// decides whether the corrected alignment is safe to accept.
+    func testShiftedSummaryBlockIsRepairedWhenAllArithmeticBalances() async throws {
+        let rows = [
+            row("GREENGROCER"),
+            row("MEMBER", "#4821", "4.29"),
+            row("111", "MILK 2L", "3.49"),
+            row("222", "BREAD WHEAT", "5.99"),
+            row("333", "EGGS DOZEN", "13.77"),
+            row("SUBTOTAL", "0.00"),
+            row("TAX", "13.77"),
+            row("TOTAL"),
+        ]
+        let repairer = FakeReceiptRepairer(moves: [
+            PriceMove(fromLine: 6, toLine: 7, price: "13.77"),
+            PriceMove(fromLine: 5, toLine: 6, price: "0.00"),
+            PriceMove(fromLine: 4, toLine: 5, price: "13.77"),
+            PriceMove(fromLine: 3, toLine: 4, price: "5.99"),
+            PriceMove(fromLine: 2, toLine: 3, price: "3.49"),
+            PriceMove(fromLine: 1, toLine: 2, price: "4.29"),
+        ])
+        let viewModel = makeViewModel(rows: rows, repairer: repairer)
+
+        viewModel.processImage(makeImage())
+        await viewModel.currentTask?.value
+        await viewModel.repairTask?.value
+
+        let parsed = try XCTUnwrap(viewModel.parsedReceipt)
+        XCTAssertFalse(viewModel.mismatchUnresolved)
+        XCTAssertNil(parsed.validationWarning)
+        XCTAssertTrue(parsed.wasAIRepaired)
+        XCTAssertEqual(price(of: "MILK", in: parsed), 4.29)
+        XCTAssertEqual(price(of: "BREAD", in: parsed), 3.49)
+        XCTAssertEqual(price(of: "EGGS", in: parsed), 5.99)
+        XCTAssertEqual(parsed.subtotal, 13.77)
+        XCTAssertEqual(parsed.tax, 0.00)
+        XCTAssertEqual(parsed.total, 13.77)
+        let calls = await repairer.callCount
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testShiftedSummaryRepairRejectsNoncontiguousMoves() {
+        let rows = shiftedSummaryRows()
+        let moves = [
+            PriceMove(fromLine: 6, toLine: 7, price: "13.77"),
+            PriceMove(fromLine: 5, toLine: 6, price: "0.00"),
+            PriceMove(fromLine: 4, toLine: 5, price: "13.77"),
+            PriceMove(fromLine: 2, toLine: 3, price: "3.49"),
+            PriceMove(fromLine: 1, toLine: 2, price: "4.29"),
+        ]
+
+        XCTAssertNil(RowRepair.reparse(rows: rows, applying: moves, expectedSubtotal: 0))
+    }
+
+    func testShiftedSummaryRepairRejectsIncompleteSummaryChain() {
+        let rows = shiftedSummaryRows()
+        let moves = [
+            PriceMove(fromLine: 5, toLine: 6, price: "0.00"),
+            PriceMove(fromLine: 4, toLine: 5, price: "13.77"),
+            PriceMove(fromLine: 3, toLine: 4, price: "5.99"),
+            PriceMove(fromLine: 2, toLine: 3, price: "3.49"),
+            PriceMove(fromLine: 1, toLine: 2, price: "4.29"),
+        ]
+
+        XCTAssertNil(RowRepair.reparse(rows: rows, applying: moves, expectedSubtotal: 0))
+    }
+
+    private func shiftedSummaryRows() -> [TextRow] {
+        [
+            row("GREENGROCER"),
+            row("MEMBER", "#4821", "4.29"),
+            row("111", "MILK 2L", "3.49"),
+            row("222", "BREAD WHEAT", "5.99"),
+            row("333", "EGGS DOZEN", "13.77"),
+            row("SUBTOTAL", "0.00"),
+            row("TAX", "13.77"),
+            row("TOTAL"),
+        ]
     }
 
     func testRepairThatDoesNotBalanceAsksUser() async throws {
